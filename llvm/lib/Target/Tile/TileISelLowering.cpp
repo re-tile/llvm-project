@@ -77,6 +77,61 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
 
   setStackPointerRegisterToSaveRestore(Tile::SP);
 
+  // i1 loads always widen to a full register.
+  setLoadExtAction(ISD::EXTLOAD, MVT::i64, MVT::i1, Promote);
+  setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MVT::i1, Promote);
+  setLoadExtAction(ISD::SEXTLOAD, MVT::i64, MVT::i1, Promote);
+
+  // Population count on 32-bit values runs through the 64-bit pcnt.
+  setOperationAction(ISD::CTPOP, MVT::i32, Promote);
+
+  // Comparisons produce a 64-bit boolean; the 32-bit form is promoted so the
+  // high bits are well defined when a setcc feeds a 64-bit consumer.
+  setOperationAction(ISD::SETCC, MVT::i32, Promote);
+
+  // The condition of a branch and the result of a select stay as Tile nodes
+  // and are matched by the cmoveqz/cmovnez and beqz/bnez patterns; expanding
+  // BR_CC and SELECT_CC reduces them onto setcc + these primitives.
+  setOperationAction(ISD::BR_CC, MVT::i32, Expand);
+  setOperationAction(ISD::BR_CC, MVT::i64, Expand);
+  setOperationAction(ISD::SELECT_CC, MVT::i32, Expand);
+  setOperationAction(ISD::SELECT_CC, MVT::i64, Expand);
+  setOperationAction(ISD::SELECT, MVT::i64, Custom);
+  setOperationAction(ISD::BRCOND, MVT::Other, Custom);
+
+  // TILE-Gx has no single 64-bit multiply; it is expanded to a multiply-add
+  // sequence during selection, so keep the node off the legalizer's libcall
+  // path by marking it Custom.
+  setOperationAction(ISD::MUL, MVT::i64, Custom);
+  setOperationAction(ISD::SDIV, MVT::i32, Expand);
+  setOperationAction(ISD::SREM, MVT::i32, Expand);
+  setOperationAction(ISD::SDIV, MVT::i64, Expand);
+  setOperationAction(ISD::SREM, MVT::i64, Expand);
+  setOperationAction(ISD::UDIV, MVT::i32, Expand);
+  setOperationAction(ISD::UREM, MVT::i32, Expand);
+  setOperationAction(ISD::UDIV, MVT::i64, Expand);
+  setOperationAction(ISD::UREM, MVT::i64, Expand);
+  setOperationAction(ISD::SDIVREM, MVT::i32, Expand);
+  setOperationAction(ISD::UDIVREM, MVT::i32, Expand);
+  setOperationAction(ISD::SDIVREM, MVT::i64, Expand);
+  setOperationAction(ISD::UDIVREM, MVT::i64, Expand);
+  setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
+  setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
+
+  // Only left rotate is provided; right rotate becomes a negated left rotate.
+  setOperationAction(ISD::ROTR, MVT::i32, Expand);
+  setOperationAction(ISD::ROTR, MVT::i64, Expand);
+  setOperationAction(ISD::ROTL, MVT::i32, Expand);
+
+  // Sub-word sign extension is realized with a shift pair.
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i16, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i32, Expand);
+
+  setTargetDAGCombine(ISD::SELECT);
+  setTargetDAGCombine(ISD::ZERO_EXTEND);
+
   setMinFunctionAlignment(Align(8));
 
   computeRegisterProperties(Subtarget.getRegisterInfo());
@@ -124,7 +179,70 @@ bool TileTargetLowering::isShuffleMaskLegal(ArrayRef<int> M, EVT VT) const {
 }
 
 SDValue TileTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
-  // No operations are marked Custom in the first-light configuration.
+  switch (Op.getOpcode()) {
+  case ISD::BRCOND:
+  case ISD::SELECT:
+    // Kept as-is and matched by the beqz/bnez and cmoveqz/cmovnez patterns.
+    return Op;
+  case ISD::MUL:
+    // Expanded into a multiply-add sequence during DAG-to-DAG selection.
+    return Op;
+  }
+  return SDValue();
+}
+
+static SDValue performSELECTCombine(SDNode *N, SelectionDAG &DAG,
+                                    TargetLowering::DAGCombinerInfo &DCI) {
+  if (DCI.isBeforeLegalizeOps())
+    return SDValue();
+
+  SDValue SetCC = N->getOperand(0);
+  if (SetCC.getOpcode() != ISD::SETCC ||
+      !SetCC.getOperand(0).getValueType().isInteger())
+    return SDValue();
+
+  SDValue False = N->getOperand(2);
+  EVT FalseTy = False.getValueType();
+  if (!FalseTy.isInteger())
+    return SDValue();
+
+  // Fold "select (setcc x), t, 0" into "select (setcc.inverse x), 0, t" so the
+  // zero arm lands on the cmovnez false operand a cmoveqz expects.
+  ConstantSDNode *CN = dyn_cast<ConstantSDNode>(False);
+  if (!CN || CN->getZExtValue())
+    return SDValue();
+
+  const SDLoc DL(N);
+  ISD::CondCode CC = cast<CondCodeSDNode>(SetCC.getOperand(2))->get();
+  SDValue True = N->getOperand(1);
+
+  SetCC = DAG.getSetCC(DL, SetCC.getValueType(), SetCC.getOperand(0),
+                       SetCC.getOperand(1), ISD::getSetCCInverse(CC, MVT::i64));
+
+  return DAG.getNode(ISD::SELECT, DL, FalseTy, SetCC, False, True);
+}
+
+static SDValue performZEXTCombine(SDNode *N, SelectionDAG &DAG) {
+  // A setcc already writes a zero-extended 64-bit value, so a zext of it is
+  // redundant: rebuild the setcc directly at i64.
+  SDValue SetCC = N->getOperand(0);
+  if (SetCC.getOpcode() != ISD::SETCC || N->getValueType(0) != MVT::i64)
+    return SDValue();
+
+  return DAG.getNode(ISD::SETCC, SDLoc(SetCC), MVT::i64, SetCC.getOperand(0),
+                     SetCC.getOperand(1), SetCC.getOperand(2));
+}
+
+SDValue TileTargetLowering::PerformDAGCombine(SDNode *N,
+                                              DAGCombinerInfo &DCI) const {
+  switch (N->getOpcode()) {
+  default:
+    break;
+  case ISD::SELECT:
+    return performSELECTCombine(N, DCI.DAG, DCI);
+  case ISD::ZERO_EXTEND:
+    return performZEXTCombine(N, DCI.DAG);
+  }
   return SDValue();
 }
 

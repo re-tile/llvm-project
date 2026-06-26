@@ -76,6 +76,32 @@ void TileDAGToDAGISel::Select(SDNode *Node) {
     return;
   }
 
+  SDLoc DL(Node);
+
+  switch (Node->getOpcode()) {
+  default:
+    break;
+  case ISD::MUL: {
+    // TILE-Gx lacks a single 64-bit multiply. Build the product from the
+    // 32x32 partial products: low*low, plus (high*low + low*high) << 32,
+    // mirroring the GCC and 3.3-fork lowering. The i32 case is handled by the
+    // mulx pattern, so only intercept i64 here.
+    if (Node->getValueType(0) != MVT::i64)
+      break;
+    SDValue A = Node->getOperand(0);
+    SDValue B = Node->getOperand(1);
+    SDValue C32 = CurDAG->getTargetConstant(32, DL, MVT::i64);
+
+    SDNode *T = CurDAG->getMachineNode(Tile::MUL_HU_LU, DL, MVT::i64, A, B);
+    T = CurDAG->getMachineNode(Tile::MULA_HU_LU, DL, MVT::i64, SDValue(T, 0), B,
+                               A);
+    T = CurDAG->getMachineNode(Tile::SHLI, DL, MVT::i64, SDValue(T, 0), C32);
+    ReplaceNode(Node, CurDAG->getMachineNode(Tile::MULA_LU_LU, DL, MVT::i64,
+                                             SDValue(T, 0), B, A));
+    return;
+  }
+  }
+
   SelectCode(Node);
 }
 

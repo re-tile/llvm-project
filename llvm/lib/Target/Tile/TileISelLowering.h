@@ -67,6 +67,8 @@ public:
 
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
+  SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
+
   const char *getTargetNodeName(unsigned Opcode) const override;
 
   EVT getSetCCResultType(const DataLayout &DL, LLVMContext &Context,
