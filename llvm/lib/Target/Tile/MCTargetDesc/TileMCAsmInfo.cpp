@@ -23,6 +23,8 @@ TileMCAsmInfo::TileMCAsmInfo(const Triple &TheTriple,
     : MCAsmInfoELF(Options) {
   IsLittleEndian = true;
   CodePointerSize = CalleeSaveStackSlotSize = 8;
+  // Instruction bundles are 8 bytes; this is the DWARF CFI code-alignment.
+  MinInstAlignment = 8;
 
   Data16bitsDirective = "\t.2byte\t";
   Data32bitsDirective = "\t.4byte\t";

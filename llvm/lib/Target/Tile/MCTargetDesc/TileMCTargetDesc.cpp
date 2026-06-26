@@ -78,4 +78,6 @@ LLVMInitializeTileTargetMC() {
   TargetRegistry::RegisterMCRegInfo(T, createTileMCRegisterInfo);
   TargetRegistry::RegisterMCSubtargetInfo(T, createTileMCSubtargetInfo);
   TargetRegistry::RegisterMCInstPrinter(T, createTileMCInstPrinter);
+  TargetRegistry::RegisterMCCodeEmitter(T, createTileMCCodeEmitter);
+  TargetRegistry::RegisterMCAsmBackend(T, createTileAsmBackend);
 }

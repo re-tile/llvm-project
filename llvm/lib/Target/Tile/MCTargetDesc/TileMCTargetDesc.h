@@ -8,18 +8,32 @@
 //
 // This file provides Tile specific target descriptions.
 //
-// The integrated-assembler creators (MCCodeEmitter / AsmBackend / ELF object
-// writer) are deferred to a later phase; first light emits text assembly only.
-//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_LIB_TARGET_TILE_MCTARGETDESC_TILEMCTARGETDESC_H
 #define LLVM_LIB_TARGET_TILE_MCTARGETDESC_TILEMCTARGETDESC_H
 
 #include "llvm/Support/DataTypes.h"
+#include <memory>
 
 namespace llvm {
+class MCAsmBackend;
+class MCCodeEmitter;
+class MCContext;
+class MCInstrInfo;
+class MCObjectTargetWriter;
+class MCRegisterInfo;
+class MCSubtargetInfo;
+class MCTargetOptions;
 class Target;
+
+MCCodeEmitter *createTileMCCodeEmitter(const MCInstrInfo &MCII, MCContext &Ctx);
+
+MCAsmBackend *createTileAsmBackend(const Target &T, const MCSubtargetInfo &STI,
+                                   const MCRegisterInfo &MRI,
+                                   const MCTargetOptions &Options);
+
+std::unique_ptr<MCObjectTargetWriter> createTileELFObjectWriter(uint8_t OSABI);
 } // namespace llvm
 
 #define GET_REGINFO_ENUM
