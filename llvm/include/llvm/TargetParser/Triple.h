@@ -89,6 +89,7 @@ public:
     tcele,
     // OpenASIP (http://openasip.org) / little endian 64b targets: tcele
     tcele64,
+    tilegx,         // TILE-Gx (64-bit, little endian): tilegx
     thumb,          // Thumb (little endian): thumb, thumbv.*
     thumbeb,        // Thumb (big endian): thumbeb
     x86,            // X86: i[3-9]86

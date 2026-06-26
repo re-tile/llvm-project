@@ -146,6 +146,8 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
     return "tcele";
   case tcele64:
     return "tcele64";
+  case tilegx:
+    return "tilegx";
   case thumb:
     return "thumb";
   case thumbeb:
@@ -354,6 +356,8 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
 
   case systemz:
     return "s390";
+  case tilegx:
+    return "tilegx";
 
   case x86:
   case x86_64:
@@ -562,6 +566,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
       .Case("renderscript32", renderscript32)
       .Case("renderscript64", renderscript64)
       .Case("ve", ve)
+      .Case("tilegx", tilegx)
       .Case("csky", csky)
       .Case("loongarch32", loongarch32)
       .Case("loongarch64", loongarch64)
@@ -711,6 +716,7 @@ Triple::ArchType Triple::parseArch(StringRef ArchName) {
           .Case("renderscript64", Triple::renderscript64)
           .Case("shave", Triple::shave)
           .Case("ve", Triple::ve)
+          .Case("tilegx", Triple::tilegx)
           .Case("wasm32", Triple::wasm32)
           .Case("wasm64", Triple::wasm64)
           .Case("csky", Triple::csky)
@@ -1045,6 +1051,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::thumbeb:
   case Triple::ve:
   case Triple::xcore:
+  case Triple::tilegx:
   case Triple::xtensa:
     return Triple::ELF;
 
@@ -1836,6 +1843,7 @@ unsigned Triple::getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::spirv64:
   case llvm::Triple::tcele64:
   case llvm::Triple::systemz:
+  case llvm::Triple::tilegx:
   case llvm::Triple::ve:
   case llvm::Triple::wasm64:
   case llvm::Triple::x86_64:
@@ -2285,6 +2293,7 @@ bool Triple::isLittleEndian() const {
   case Triple::spirv64:
   case Triple::tcele:
   case Triple::tcele64:
+  case Triple::tilegx:
   case Triple::thumb:
   case Triple::ve:
   case Triple::wasm32:
