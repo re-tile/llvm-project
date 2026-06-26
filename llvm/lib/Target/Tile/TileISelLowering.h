@@ -1,159 +1,115 @@
 //===-- TileISelLowering.h - Tile DAG Lowering Interface --------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
 // This file defines the interfaces that Tile uses to lower LLVM code into a
 // selection DAG.
 //
+// This is a first-light subset: it lowers integer arguments, returns and calls
+// well enough for simple functions. Address/TLS/float/vararg/byval lowering is
+// staged in over later phases.
+//
 //===----------------------------------------------------------------------===//
 
-#ifndef TileISELLOWERING_H
-#define TileISELLOWERING_H
+#ifndef LLVM_LIB_TARGET_TILE_TILEISELLOWERING_H
+#define LLVM_LIB_TARGET_TILE_TILEISELLOWERING_H
 
 #include "Tile.h"
-#include "TileSubtarget.h"
-#include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/Target/TargetLowering.h"
 #include "llvm/CodeGen/CallingConvLower.h"
+#include "llvm/CodeGen/SelectionDAG.h"
+#include "llvm/CodeGen/TargetLowering.h"
 
 namespace llvm {
+class TileSubtarget;
+
 namespace TileISD {
 enum NodeType {
   // Start the numbering from where ISD NodeType finishes.
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
 
-  // Jump and link (call)
   JmpLink,
-
-  // r <- (r << 16) + imm16
   SAR16,
-
-  // tls
   TLSRELAXADD0,
   TLSRELAXADD1,
   TLSGD,
   LDTLS,
-
-  // Unary operand move
   MOVE,
-
-  // Return
   Ret,
-
   MF,
-
   BFINS,
   BFEXTU,
-
-  // Network
   NET,
-
   BRINDJT,
   VAARG_SP,
   ALLOCA_SP,
   ALLOCA_ADDR
 };
-}
-
-//===--------------------------------------------------------------------===//
-// TargetLowering Implementation
-//===--------------------------------------------------------------------===//
+} // namespace TileISD
 
 class TileTargetLowering : public TargetLowering {
 public:
-  explicit TileTargetLowering(TileTargetMachine &TM);
+  explicit TileTargetLowering(const TargetMachine &TM,
+                              const TileSubtarget &STI);
 
-  virtual bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const;
+  bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
 
-  virtual bool isShuffleMaskLegal(const SmallVectorImpl<int> &M, EVT VT) const;
+  bool isShuffleMaskLegal(ArrayRef<int> M, EVT VT) const override;
 
-  virtual unsigned getJumpTableEncoding(void) const;
+  unsigned getJumpTableEncoding() const override;
 
-  virtual MVT getScalarShiftAmountTy(EVT LHSTy) const { return MVT::i32; }
+  MVT getScalarShiftAmountTy(const DataLayout &, EVT) const override {
+    return MVT::i32;
+  }
 
-  // Provide custom lowering hooks for some operations.
-  virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
-  // This method returns the name of a target specific DAG node.
-  virtual const char *getTargetNodeName(unsigned Opcode) const;
+  const char *getTargetNodeName(unsigned Opcode) const override;
 
-  // get the ISD::SETCC result ValueType.
-  EVT getSetCCResultType(EVT VT) const;
-
-  virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
+  EVT getSetCCResultType(const DataLayout &DL, LLVMContext &Context,
+                         EVT VT) const override;
 
 private:
-  // Subtarget Info.
-  const TileSubtarget *Subtarget;
+  const TileSubtarget &Subtarget;
 
-  // Lower Operand helpers.
-  SDValue LowerCallResult(
-      SDValue Chain, SDValue InFlag, CallingConv::ID CallConv, bool isVarArg,
-      const SmallVectorImpl<ISD::InputArg> &Ins, DebugLoc dl, SelectionDAG &DAG,
-      SmallVectorImpl<SDValue> &InVals) const;
+  SDValue LowerCallResult(SDValue Chain, SDValue InGlue,
+                          CallingConv::ID CallConv, bool isVarArg,
+                          const SmallVectorImpl<ISD::InputArg> &Ins,
+                          const SDLoc &dl, SelectionDAG &DAG,
+                          SmallVectorImpl<SDValue> &InVals) const;
 
-  // Lower Operand specifics.
-  SDValue lowerBR_JT(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerConstantPool(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerJumpTable(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerVASTART(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerVACOPY(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerVAARG(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerINTRINSIC_W_CHAIN(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerFABS(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerRETURNADDR(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerMEMBARRIER(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerATOMIC_FENCE(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerFpFpConv(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerFpIntConv(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv,
+                               bool isVarArg,
+                               const SmallVectorImpl<ISD::InputArg> &Ins,
+                               const SDLoc &dl, SelectionDAG &DAG,
+                               SmallVectorImpl<SDValue> &InVals) const override;
 
-  virtual SDValue LowerFormalArguments(
-      SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
-      const SmallVectorImpl<ISD::InputArg> &Ins, DebugLoc dl, SelectionDAG &DAG,
-      SmallVectorImpl<SDValue> &InVals) const;
+  SDValue LowerCall(TargetLowering::CallLoweringInfo &CLI,
+                    SmallVectorImpl<SDValue> &InVals) const override;
 
-  virtual SDValue LowerCall(TargetLowering::CallLoweringInfo &CLI,
-                            SmallVectorImpl<SDValue> &InVals) const;
+  SDValue LowerReturn(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
+                      const SmallVectorImpl<ISD::OutputArg> &Outs,
+                      const SmallVectorImpl<SDValue> &OutVals, const SDLoc &dl,
+                      SelectionDAG &DAG) const override;
 
-  virtual SDValue
-  LowerReturn(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
-              const SmallVectorImpl<ISD::OutputArg> &Outs,
-              const SmallVectorImpl<SDValue> &OutVals, DebugLoc dl,
-              SelectionDAG &DAG) const;
+  MachineBasicBlock *
+  EmitInstrWithCustomInserter(MachineInstr &MI,
+                              MachineBasicBlock *MBB) const override;
 
-  virtual MachineBasicBlock *
-  EmitInstrWithCustomInserter(MachineInstr *MI, MachineBasicBlock *MBB) const;
+  ConstraintType getConstraintType(StringRef Constraint) const override;
 
-  // Copy Tile byVal arg to registers and stack.
-  void passByValArg(
-      SDValue Chain, DebugLoc dl,
-      SmallVector<std::pair<unsigned, SDValue>, TILEGX_AREG_NUM> &RegsToPass,
-      SmallVector<SDValue, 8> &MemOpChains, SDValue StackPtr,
-      MachineFrameInfo *MFI, SelectionDAG &DAG, SDValue Arg,
-      const CCValAssign &VA, const ISD::ArgFlagsTy &Flags) const;
-
-  // Inline asm support.
-  ConstraintType getConstraintType(const std::string &Constraint) const;
-
-  // Examine constraint string and operand type and determine a weight value.
-  // The operand object must already have been set up with the operand type.
-  ConstraintWeight getSingleConstraintMatchWeight(AsmOperandInfo &info,
-                                                  const char *constraint) const;
+  ConstraintWeight
+  getSingleConstraintMatchWeight(AsmOperandInfo &info,
+                                 const char *constraint) const override;
 
   std::pair<unsigned, const TargetRegisterClass *>
-  getRegForInlineAsmConstraint(const std::string &Constraint, EVT VT) const;
+  getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                               StringRef Constraint, MVT VT) const override;
 };
-}
 
-#endif // TileISELLOWERING_H
+} // end namespace llvm
+
+#endif // LLVM_LIB_TARGET_TILE_TILEISELLOWERING_H

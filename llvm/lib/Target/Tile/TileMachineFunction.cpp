@@ -1,18 +1,13 @@
 //===-- TileMachineFunctionInfo.cpp - Private data used for Tile ----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "TileMachineFunction.h"
-#include "TileInstrInfo.h"
-#include "TileSubtarget.h"
-#include "MCTargetDesc/TileBaseInfo.h"
-#include "llvm/IR/Function.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "MCTargetDesc/TileMCTargetDesc.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -25,38 +20,34 @@ static cl::opt<bool>
 FixLinkReg("tile-fix-link-reg", cl::Hidden, cl::init(true),
            cl::desc("Always use $50 as the link register."));
 
+void TileFunctionInfo::anchor() {}
+
+MachineFunctionInfo *TileFunctionInfo::clone(
+    BumpPtrAllocator &Allocator, MachineFunction &DestMF,
+    const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB) const {
+  return DestMF.cloneInfo<TileFunctionInfo>(*this);
+}
+
 bool TileFunctionInfo::globalBaseRegFixed() const { return FixGlobalBaseReg; }
 
-bool TileFunctionInfo::globalBaseRegSet() const { return GlobalBaseReg; }
+bool TileFunctionInfo::globalBaseRegSet() const { return GlobalBaseReg.isValid(); }
 
-unsigned TileFunctionInfo::getGlobalBaseReg() {
-  // Return if it has already been initialized.
+Register TileFunctionInfo::getGlobalBaseReg() {
   if (GlobalBaseReg)
     return GlobalBaseReg;
-
-  if (FixGlobalBaseReg)
-    return GlobalBaseReg = Tile::R51;
-
-  const TargetRegisterClass *RC = &Tile::CPURegsRegClass;
-
-  return GlobalBaseReg = MF.getRegInfo().createVirtualRegister(RC);
+  // First light always pins the global base to $51; a virtual-register base for
+  // PIC is wired up in a later phase.
+  assert(FixGlobalBaseReg && "non-fixed global base register not yet supported");
+  return GlobalBaseReg = Tile::R51;
 }
 
 bool TileFunctionInfo::linkRegFixed() const { return FixLinkReg; }
 
-bool TileFunctionInfo::linkRegSet() const { return LinkReg; }
+bool TileFunctionInfo::linkRegSet() const { return LinkReg.isValid(); }
 
-unsigned TileFunctionInfo::getLinkReg() {
-  // Return if it has already been initialized.
+Register TileFunctionInfo::getLinkReg() {
   if (LinkReg)
     return LinkReg;
-
-  if (FixLinkReg)
-    return LinkReg = Tile::R50;
-
-  const TargetRegisterClass *RC = &Tile::CPURegsRegClass;
-
-  return LinkReg = MF.getRegInfo().createVirtualRegister(RC);
+  assert(FixLinkReg && "non-fixed link register not yet supported");
+  return LinkReg = Tile::R50;
 }
-
-void TileFunctionInfo::anchor() {}

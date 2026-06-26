@@ -1,9 +1,8 @@
 //===-- TileTargetMachine.h - Define TargetMachine for Tile -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -11,76 +10,41 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TILETARGETMACHINE_H
-#define TILETARGETMACHINE_H
+#ifndef LLVM_LIB_TARGET_TILE_TILETARGETMACHINE_H
+#define LLVM_LIB_TARGET_TILE_TILETARGETMACHINE_H
 
-#include "TileFrameLowering.h"
-#include "TileInstrInfo.h"
-#include "TileISelLowering.h"
-#include "TileSelectionDAGInfo.h"
 #include "TileSubtarget.h"
-#include "TileMachineFunction.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineJumpTableInfo.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetFrameLowering.h"
+#include <optional>
 
 namespace llvm {
-class formatted_raw_ostream;
 
-class TileTargetMachine : public LLVMTargetMachine {
-  TileSubtarget Subtarget;
-  const DataLayout DL;
-  const InstrItineraryData *InstrItins;
-  TileInstrInfo InstrInfo;
-  TileFrameLowering FrameLowering;
-  TileTargetLowering TLInfo;
-  TileSelectionDAGInfo TSInfo;
+class TileTargetMachine : public CodeGenTargetMachineImpl {
+  std::unique_ptr<TargetLoweringObjectFile> TLOF;
+  mutable StringMap<std::unique_ptr<TileSubtarget>> SubtargetMap;
 
 public:
-  TileTargetMachine(const Target &T, StringRef TT, StringRef CPU, StringRef FS,
-                    const TargetOptions &Options, Reloc::Model RM,
-                    CodeModel::Model CM, CodeGenOpt::Level OL);
+  TileTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
+                    StringRef FS, const TargetOptions &Options,
+                    std::optional<Reloc::Model> RM,
+                    std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
+                    bool JIT);
+  ~TileTargetMachine() override;
 
-  virtual const TileInstrInfo *getInstrInfo() const { return &InstrInfo; }
-  virtual const TargetFrameLowering *getFrameLowering() const {
-    return &FrameLowering;
-  }
-  virtual const TileSubtarget *getSubtargetImpl() const { return &Subtarget; }
-  virtual const DataLayout *getDataLayout() const { return &DL; }
+  const TileSubtarget *getSubtargetImpl(const Function &F) const override;
 
-  virtual const InstrItineraryData *getInstrItineraryData() const {
-    return InstrItins;
-  }
-
-  virtual const TileRegisterInfo *getRegisterInfo() const {
-    return &InstrInfo.getRegisterInfo();
+  TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+  TargetLoweringObjectFile *getObjFileLowering() const override {
+    return TLOF.get();
   }
 
-  virtual const TileTargetLowering *getTargetLowering() const {
-    return &TLInfo;
-  }
-
-  virtual const TileSelectionDAGInfo *getSelectionDAGInfo() const {
-    return &TSInfo;
-  }
-
-  // Pass Pipeline Configuration.
-  virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
-
-  /// \brief Register Tile analysis passes with a pass manager.
-  virtual void addAnalysisPasses(PassManagerBase &PM);
+  MachineFunctionInfo *
+  createMachineFunctionInfo(BumpPtrAllocator &Allocator, const Function &F,
+                            const TargetSubtargetInfo *STI) const override;
 };
 
-class TileGXTargetMachine : public TileTargetMachine {
-  virtual void anchor();
-public:
-  TileGXTargetMachine(const Target &T, StringRef TT, StringRef CPU,
-                      StringRef FS, const TargetOptions &Options,
-                      Reloc::Model RM, CodeModel::Model CM,
-                      CodeGenOpt::Level OL);
-};
-} // End llvm namespace
+} // end namespace llvm
 
-#endif
+#endif // LLVM_LIB_TARGET_TILE_TILETARGETMACHINE_H

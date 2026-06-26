@@ -1,9 +1,8 @@
-//===-- TileMachineFunctionInfo.h - Private data used for Tile ----*- C++ -*-=//
+//===-- TileMachineFunctionInfo.h - Private data used for Tile --*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -11,66 +10,54 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TILE_MACHINE_FUNCTION_INFO_H
-#define TILE_MACHINE_FUNCTION_INFO_H
+#ifndef LLVM_LIB_TARGET_TILE_TILEMACHINEFUNCTION_H
+#define LLVM_LIB_TARGET_TILE_TILEMACHINEFUNCTION_H
 
-#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
-#include <utility>
+#include "llvm/CodeGen/MachineFunction.h"
 
 namespace llvm {
+
+class Function;
+class TargetSubtargetInfo;
 
 class TileFunctionInfo : public MachineFunctionInfo {
   virtual void anchor();
 
-  MachineFunction &MF;
-  // Some subtargets require that sret lowering includes
-  // returning the value of the returned struct in a register. This field
-  // holds the virtual register into which the sret argument is passed.
-  unsigned SRetReturnReg;
-
-  // Keeps track of the virtual register initialized for
-  // use as the global base register. This is used for
-  // PIC in some PIC relocation models.
-  unsigned GlobalBaseReg;
-
-  // This is used to hold the next PC, for PIC purpose.
-  unsigned LinkReg;
-
-  // FrameIndex for start of varargs area.
-  int VarArgsFrameIndex;
-  // The FrameIndex which kept the value of VarArgsFrameIndex.
-  int VarArgsResSlot;
-
-  // Frame index of dynamically allocated stack area.
-  mutable int DynAllocFI;
-  unsigned MaxCallFrameSize;
+  Register SRetReturnReg;
+  Register GlobalBaseReg;
+  Register LinkReg;
+  int VarArgsFrameIndex = 0;
+  int VarArgsResSlot = 0;
+  mutable int DynAllocFI = 0;
+  unsigned MaxCallFrameSize = 0;
 
 public:
-  TileFunctionInfo(MachineFunction &MF)
-      : MF(MF), SRetReturnReg(0), GlobalBaseReg(0), LinkReg(0),
-        VarArgsFrameIndex(0), VarArgsResSlot(0), DynAllocFI(0),
-        MaxCallFrameSize(0) {}
+  TileFunctionInfo(const Function &F, const TargetSubtargetInfo *STI) {}
 
-  // The first call to this function creates a frame object for dynamically
+  MachineFunctionInfo *
+  clone(BumpPtrAllocator &Allocator, MachineFunction &DestMF,
+        const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)
+      const override;
+
+  // The first call to this function creates a frame object for the dynamically
   // allocated stack area.
-  int getDynAllocFI() const {
+  int getDynAllocFI(MachineFunction &MF) const {
     if (!DynAllocFI)
-      DynAllocFI = MF.getFrameInfo()->CreateFixedObject(8, 0, true);
-
+      DynAllocFI = MF.getFrameInfo().CreateFixedObject(8, 0, true);
     return DynAllocFI;
   }
   bool isDynAllocFI(int FI) const { return DynAllocFI && DynAllocFI == FI; }
 
-  unsigned getSRetReturnReg() const { return SRetReturnReg; }
-  void setSRetReturnReg(unsigned Reg) { SRetReturnReg = Reg; }
+  Register getSRetReturnReg() const { return SRetReturnReg; }
+  void setSRetReturnReg(Register Reg) { SRetReturnReg = Reg; }
 
   bool globalBaseRegFixed() const;
   bool globalBaseRegSet() const;
-  unsigned getGlobalBaseReg();
+  Register getGlobalBaseReg();
   bool linkRegFixed() const;
   bool linkRegSet() const;
-  unsigned getLinkReg();
+  Register getLinkReg();
 
   int getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
   void setVarArgsFrameIndex(int Index) { VarArgsFrameIndex = Index; }
@@ -80,6 +67,6 @@ public:
   void setMaxCallFrameSize(unsigned S) { MaxCallFrameSize = S; }
 };
 
-} // end of namespace llvm
+} // end namespace llvm
 
-#endif // TILE_MACHINE_FUNCTION_INFO_H
+#endif // LLVM_LIB_TARGET_TILE_TILEMACHINEFUNCTION_H

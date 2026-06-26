@@ -1,9 +1,8 @@
 //===-- TileTargetMachine.cpp - Define TargetMachine for Tile -------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -13,89 +12,92 @@
 
 #include "TileTargetMachine.h"
 #include "Tile.h"
-#include "llvm/PassManager.h"
+#include "TileMachineFunction.h"
+#include "TargetInfo/TileTargetInfo.h"
 #include "llvm/CodeGen/Passes.h"
-#include "llvm/Support/CommandLine.h"
+#include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/Compiler.h"
+#include <optional>
+
 using namespace llvm;
 
-static cl::opt<bool> DisableTileGXVLIWPacketizer(
-    "disable-tilegx-packetizer", cl::Hidden, cl::ZeroOrMore, cl::init(false),
-    cl::desc("Disable TileGX VLIW Packetizer"));
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeTileTarget() {
+  RegisterTargetMachine<TileTargetMachine> X(getTheTileTarget());
 
-extern "C" void LLVMInitializeTileTarget() {
-  // Register the target.
-  RegisterTargetMachine<TileGXTargetMachine> B(TheTileGXTarget);
+  PassRegistry &PR = *PassRegistry::getPassRegistry();
+  initializeTileDAGToDAGISelLegacyPass(PR);
 }
 
-TileTargetMachine::TileTargetMachine(
-    const Target &T, StringRef TT, StringRef CPU, StringRef FS,
-    const TargetOptions &Options, Reloc::Model RM, CodeModel::Model CM,
-    CodeGenOpt::Level OL)
-    : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-      Subtarget(TT, CPU, FS), DL(Subtarget.getTargetDataLayout()),
-      InstrItins(&Subtarget.getInstrItineraryData()), InstrInfo(*this),
-      FrameLowering(Subtarget), TLInfo(*this), TSInfo(*this) {}
+static Reloc::Model getEffectiveRelocModel(std::optional<Reloc::Model> RM) {
+  return RM.value_or(Reloc::Static);
+}
 
-void TileGXTargetMachine::anchor() {}
+TileTargetMachine::TileTargetMachine(const Target &T, const Triple &TT,
+                                     StringRef CPU, StringRef FS,
+                                     const TargetOptions &Options,
+                                     std::optional<Reloc::Model> RM,
+                                     std::optional<CodeModel::Model> CM,
+                                     CodeGenOptLevel OL, bool JIT)
+    : CodeGenTargetMachineImpl(T, TT.computeDataLayout(), TT, CPU, FS, Options,
+                               getEffectiveRelocModel(RM),
+                               getEffectiveCodeModel(CM, CodeModel::Small), OL),
+      TLOF(std::make_unique<TargetLoweringObjectFileELF>()) {
+  initAsmInfo();
+}
 
-TileGXTargetMachine::TileGXTargetMachine(
-    const Target &T, StringRef TT, StringRef CPU, StringRef FS,
-    const TargetOptions &Options, Reloc::Model RM, CodeModel::Model CM,
-    CodeGenOpt::Level OL)
-    : TileTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL) {}
+TileTargetMachine::~TileTargetMachine() = default;
+
+const TileSubtarget *
+TileTargetMachine::getSubtargetImpl(const Function &F) const {
+  Attribute CPUAttr = F.getFnAttribute("target-cpu");
+  Attribute TuneAttr = F.getFnAttribute("tune-cpu");
+  Attribute FSAttr = F.getFnAttribute("target-features");
+
+  std::string CPU =
+      CPUAttr.isValid() ? CPUAttr.getValueAsString().str() : TargetCPU;
+  std::string TuneCPU =
+      TuneAttr.isValid() ? TuneAttr.getValueAsString().str() : CPU;
+  std::string FS =
+      FSAttr.isValid() ? FSAttr.getValueAsString().str() : TargetFS;
+
+  auto &I = SubtargetMap[CPU + FS];
+  if (!I)
+    I = std::make_unique<TileSubtarget>(CPU, TuneCPU, FS, *this);
+  return I.get();
+}
+
+MachineFunctionInfo *TileTargetMachine::createMachineFunctionInfo(
+    BumpPtrAllocator &Allocator, const Function &F,
+    const TargetSubtargetInfo *STI) const {
+  return TileFunctionInfo::create<TileFunctionInfo>(Allocator, F, STI);
+}
 
 namespace {
-// Tile Code Generator Pass Configuration Options.
 class TilePassConfig : public TargetPassConfig {
 public:
-  TilePassConfig(TileTargetMachine *TM, PassManagerBase &PM)
+  TilePassConfig(TileTargetMachine &TM, PassManagerBase &PM)
       : TargetPassConfig(TM, PM) {}
 
   TileTargetMachine &getTileTargetMachine() const {
     return getTM<TileTargetMachine>();
   }
 
-  const TileSubtarget &getTileSubtarget() const {
-    return *getTileTargetMachine().getSubtargetImpl();
-  }
-
-  virtual bool addInstSelector();
-  virtual bool addPreSched2();
-  virtual bool addPreEmitPass();
+  bool addInstSelector() override;
+  void addPreSched2() override;
 };
 } // namespace
 
 TargetPassConfig *TileTargetMachine::createPassConfig(PassManagerBase &PM) {
-  return new TilePassConfig(this, PM);
+  return new TilePassConfig(*this, PM);
 }
 
-// Install an instruction selector pass using
-// the ISelDag to gen Tile code.
 bool TilePassConfig::addInstSelector() {
-  addPass(createTileISelDag(getTileTargetMachine()));
+  addPass(createTileISelDag(getTileTargetMachine(), getOptLevel()));
   return false;
 }
 
-bool TilePassConfig::addPreSched2() {
-  addPass(createTileExpandPseudoPass(getTileTargetMachine()));
-  return true;
-}
-
-bool TilePassConfig::addPreEmitPass() {
-  bool ShouldPrint = false;
-  if (getOptLevel() != CodeGenOpt::None && !DisableTileGXVLIWPacketizer) {
-    addPass(createTileVLIWPacketizer());
-    ShouldPrint = true;
-  }
-
-  return ShouldPrint;
-}
-
-void TileTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
-  // Add first the target-independent BasicTTI pass, then our Tile pass. This
-  // allows the Tile pass to delegate to the target independent layer when
-  // appropriate.
-  PM.add(createBasicTargetTransformInfoPass(getTargetLowering()));
-  PM.add(createTileTargetTransformInfoPass(this));
+void TilePassConfig::addPreSched2() {
+  addPass(createTileExpandPseudoPass());
 }

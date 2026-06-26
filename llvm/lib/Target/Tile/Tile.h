@@ -1,9 +1,8 @@
 //===-- Tile.h - Top-level interface for Tile representation ----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -12,10 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TARGET_TILE_H
-#define TARGET_TILE_H
+#ifndef LLVM_LIB_TARGET_TILE_TILE_H
+#define LLVM_LIB_TARGET_TILE_TILE_H
 
 #include "MCTargetDesc/TileMCTargetDesc.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
@@ -24,22 +24,19 @@ class FunctionPass;
 class MachineInstr;
 class AsmPrinter;
 class MCInst;
+class PassRegistry;
 
-FunctionPass *createTileISelDag(TileTargetMachine &TM);
-FunctionPass *createTileDelaySlotFillerPass(TileTargetMachine &TM);
-FunctionPass *createTileExpandPseudoPass(TileTargetMachine &TM);
-FunctionPass *createTileEmitGPRestorePass(TileTargetMachine &TM);
-FunctionPass *createTileVLIWPacketizer();
+FunctionPass *createTileISelDag(TileTargetMachine &TM, CodeGenOptLevel OptLevel);
+FunctionPass *createTileExpandPseudoPass();
 void LowerTileMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
                                    AsmPrinter &AP);
 
-/// \brief Creates an Tile-specific Target Transformation Info pass.
-ImmutablePass *createTileTargetTransformInfoPass(const TileTargetMachine *TM);
+void initializeTileDAGToDAGISelLegacyPass(PassRegistry &);
 } // end namespace llvm
 
-// TILE-Gx use 10 registers, r0 ~ r9 for arg passing.
+// TILE-Gx uses 10 registers, r0 ~ r9, for argument passing.
 #define TILEGX_AREG_NUM 10
-// TILE-Gx reserve the bottom 16bytes on frame for special usage.
+// TILE-Gx reserves the bottom 16 bytes on the frame for special usage.
 #define TILEGX_BZONE_SIZE 16
 
-#endif
+#endif // LLVM_LIB_TARGET_TILE_TILE_H

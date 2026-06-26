@@ -26,7 +26,6 @@ add_llvm_target(TileCodeGen
   TileSelectionDAGInfo.cpp
   TileSubtarget.cpp
   TileTargetMachine.cpp
-  TileTargetTransformInfo.cpp
 
   LINK_COMPONENTS
   Analysis

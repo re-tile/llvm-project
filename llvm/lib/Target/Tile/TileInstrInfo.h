@@ -1,9 +1,8 @@
 //===-- TileInstrInfo.h - Tile Instruction Information ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -11,94 +10,71 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TILEINSTRUCTIONINFO_H
-#define TILEINSTRUCTIONINFO_H
+#ifndef LLVM_LIB_TARGET_TILE_TILEINSTRINFO_H
+#define LLVM_LIB_TARGET_TILE_TILEINSTRINFO_H
 
-#include "Tile.h"
 #include "TileRegisterInfo.h"
-#include "MCTargetDesc/TileBaseInfo.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
 
 #define GET_INSTRINFO_HEADER
 #include "TileGenInstrInfo.inc"
 
 namespace llvm {
 
+class TileSubtarget;
+
 namespace Tile {
 // Return the inverse of the specified opcode, e.g. turning BEQ to BNE.
 unsigned GetOppositeBranchOpc(unsigned Opc);
-}
+} // namespace Tile
 
 class TileInstrInfo : public TileGenInstrInfo {
-  TileTargetMachine &TM;
   const TileRegisterInfo RI;
   unsigned UncondBrOpc;
+
 public:
-  explicit TileInstrInfo(TileTargetMachine &TM);
+  explicit TileInstrInfo(const TileSubtarget &ST);
 
-  // TargetInstrInfo is a superset of MRegister info.  As such, whenever
-  // a client has an instance of instruction info, it should always be
-  // able to get register info as well (through this method).
-  virtual const TileRegisterInfo &getRegisterInfo() const;
+  const TileRegisterInfo &getRegisterInfo() const { return RI; }
 
-  // If the specified machine instruction is a direct load from a stack slot,
-  // return the virtual or physical register number of the destination along
-  // with the FrameIndex of the loaded stack slot. If not, return 0.
-  // This predicate must return 0 if the instruction has any side effects other
-  // than loading from the stack slot.
-  virtual unsigned isLoadFromStackSlot(const MachineInstr *MI,
-                                       int &FrameIndex) const;
+  bool analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
+                     MachineBasicBlock *&FBB,
+                     SmallVectorImpl<MachineOperand> &Cond,
+                     bool AllowModify = false) const override;
 
-  // If the specified machine instruction is a direct store to a stack slot,
-  // return the virtual or physical register number of the source reg along
-  // with the FrameIndex of the loaded stack slot.  If not, return 0.
-  // This predicate must return 0 if the instruction has any side effects
-  // other than storing to the stack slot.
-  virtual unsigned isStoreToStackSlot(const MachineInstr *MI,
-                                      int &FrameIndex) const;
+  unsigned removeBranch(MachineBasicBlock &MBB,
+                        int *BytesRemoved = nullptr) const override;
 
-  // Branch Analysis.
-  virtual bool AnalyzeBranch(
-      MachineBasicBlock &MBB, MachineBasicBlock *&TBB, MachineBasicBlock *&FBB,
-      SmallVectorImpl<MachineOperand> &Cond, bool AllowModify) const;
-  virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const;
+  unsigned insertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
+                        MachineBasicBlock *FBB, ArrayRef<MachineOperand> Cond,
+                        const DebugLoc &DL,
+                        int *BytesAdded = nullptr) const override;
+
+  bool
+  reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;
+
+  void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
+                   const DebugLoc &DL, Register DestReg, Register SrcReg,
+                   bool KillSrc, bool RenamableDest = false,
+                   bool RenamableSrc = false) const override;
+
+  void storeRegToStackSlot(
+      MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI, Register SrcReg,
+      bool isKill, int FrameIndex, const TargetRegisterClass *RC, Register VReg,
+      MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
+
+  void loadRegFromStackSlot(
+      MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+      Register DestReg, int FrameIndex, const TargetRegisterClass *RC,
+      Register VReg, unsigned SubReg = 0,
+      MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
 
 private:
-  void BuildCondBr(MachineBasicBlock &MBB, MachineBasicBlock *TBB, DebugLoc DL,
-                   const SmallVectorImpl<MachineOperand> &Cond) const;
-
-public:
-  virtual unsigned InsertBranch(
-      MachineBasicBlock &MBB, MachineBasicBlock *TBB, MachineBasicBlock *FBB,
-      const SmallVectorImpl<MachineOperand> &Cond, DebugLoc DL) const;
-  virtual void copyPhysReg(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MI, DebugLoc DL,
-      unsigned DestReg, unsigned SrcReg, bool KillSrc) const;
-  virtual void storeRegToStackSlot(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI, unsigned SrcReg,
-      bool isKill, int FrameIndex, const TargetRegisterClass *RC,
-      const TargetRegisterInfo *TRI) const;
-
-  virtual void loadRegFromStackSlot(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
-      unsigned DestReg, int FrameIndex, const TargetRegisterClass *RC,
-      const TargetRegisterInfo *TRI) const;
-
-  virtual MachineInstr *
-  emitFrameIndexDebugValue(MachineFunction &MF, int FrameIx, uint64_t Offset,
-                           const MDNode *MDPtr, DebugLoc DL) const;
-
-  virtual bool ReverseBranchCondition(
-      SmallVectorImpl<MachineOperand> &Cond) const;
-
-  virtual DFAPacketizer *CreateTargetScheduleState(
-      const TargetMachine *TM, const ScheduleDAG *DAG) const;
-
-  virtual bool isSchedulingBoundary(const MachineInstr *MI,
-                                    const MachineBasicBlock *MBB,
-                                    const MachineFunction &MF) const;
+  void BuildCondBr(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
+                   const DebugLoc &DL,
+                   ArrayRef<MachineOperand> Cond) const;
 };
 
-}
-#endif
+} // end namespace llvm
+
+#endif // LLVM_LIB_TARGET_TILE_TILEINSTRINFO_H

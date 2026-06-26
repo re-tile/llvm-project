@@ -1,9 +1,8 @@
 //===-- TileRegisterInfo.h - Tile Register Information Impl -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -11,56 +10,35 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TILEREGISTERINFO_H
-#define TILEREGISTERINFO_H
+#ifndef LLVM_LIB_TARGET_TILE_TILEREGISTERINFO_H
+#define LLVM_LIB_TARGET_TILE_TILEREGISTERINFO_H
 
-#include "Tile.h"
-#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
 
 #define GET_REGINFO_HEADER
 #include "TileGenRegisterInfo.inc"
 
 namespace llvm {
 class TileSubtarget;
-class TargetInstrInfo;
-class Type;
 
 struct TileRegisterInfo : public TileGenRegisterInfo {
-  const TileSubtarget &Subtarget;
-  const TargetInstrInfo &TII;
+  explicit TileRegisterInfo(const TileSubtarget &ST);
 
-  TileRegisterInfo(const TileSubtarget &Subtarget, const TargetInstrInfo &tii);
+  const MCPhysReg *getCalleeSavedRegs(const MachineFunction *MF) const override;
+  const uint32_t *getCallPreservedMask(const MachineFunction &MF,
+                                       CallingConv::ID CC) const override;
 
-  // Given the enum value for some register,
-  // return the number that it corresponds to.
-  static unsigned getRegisterNumbering(unsigned RegEnum);
+  BitVector getReservedRegs(const MachineFunction &MF) const override;
 
-  /// Get PIC indirect call register.
-  static unsigned getPICCallReg();
+  bool requiresRegisterScavenging(const MachineFunction &MF) const override;
 
-  /// Adjust the Tile stack frame..
-  void adjustTileStackFrame(MachineFunction &MF) const;
-
-  /// Code Generation virtual methods.
-  const uint16_t *getCalleeSavedRegs(const MachineFunction *MF = 0) const;
-  const uint32_t *getCallPreservedMask(CallingConv::ID) const;
-
-  BitVector getReservedRegs(const MachineFunction &MF) const;
-
-  virtual bool requiresRegisterScavenging(const MachineFunction &MF) const;
-
-  /// Stack Frame Processing Methods.
-  void eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
+  bool eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                            unsigned FIOperandNum,
-                           RegScavenger *RS = NULL) const;
+                           RegScavenger *RS = nullptr) const override;
 
-  void processFunctionBeforeFrameFinalized(MachineFunction &MF,
-                                           RegScavenger *RS = NULL) const;
-
-  /// Debug information queries.
-  unsigned getFrameRegister(const MachineFunction &MF) const;
+  Register getFrameRegister(const MachineFunction &MF) const override;
 };
 
 } // end namespace llvm
 
-#endif
+#endif // LLVM_LIB_TARGET_TILE_TILEREGISTERINFO_H

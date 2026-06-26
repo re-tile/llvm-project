@@ -1,9 +1,8 @@
 //===-- TileSubtarget.cpp - Tile Subtarget Information --------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -13,8 +12,9 @@
 
 #include "TileSubtarget.h"
 #include "Tile.h"
-#include "TileRegisterInfo.h"
 #include "llvm/MC/TargetRegistry.h"
+
+#define DEBUG_TYPE "tile-subtarget"
 
 #define GET_SUBTARGETINFO_TARGET_DESC
 #define GET_SUBTARGETINFO_CTOR
@@ -24,25 +24,20 @@ using namespace llvm;
 
 void TileSubtarget::anchor() {}
 
-TileSubtarget::TileSubtarget(const std::string &TT, const std::string &CPU,
-                             const std::string &FS)
-    : TileGenSubtargetInfo(TT, CPU, FS) {
-  std::string CPUName = CPU;
-  if (CPUName.empty())
-    CPUName = "tilegx";
-
-  // Parse features string.
-  ParseSubtargetFeatures(CPUName, FS);
-
-  // Initialize scheduling itinerary for the specified CPU.
-  InstrItins = getInstrItineraryForCPU(CPUName);
+TileSubtarget &TileSubtarget::initializeSubtargetDependencies(StringRef CPU,
+                                                              StringRef TuneCPU,
+                                                              StringRef FS) {
+  if (CPU.empty())
+    CPU = "tilegx";
+  if (TuneCPU.empty())
+    TuneCPU = CPU;
+  ParseSubtargetFeatures(CPU, TuneCPU, FS);
+  InstrItins = getInstrItineraryForCPU(CPU);
+  return *this;
 }
 
-bool TileSubtarget::enablePostRAScheduler(
-    CodeGenOpt::Level OptLevel, TargetSubtargetInfo::AntiDepBreakMode &Mode,
-    RegClassVector &CriticalPathRCs) const {
-  Mode = TargetSubtargetInfo::ANTIDEP_NONE;
-  CriticalPathRCs.clear();
-  CriticalPathRCs.push_back(&Tile::CPURegsRegClass);
-  return OptLevel >= CodeGenOpt::Aggressive;
-}
+TileSubtarget::TileSubtarget(const StringRef &CPU, const StringRef &TuneCPU,
+                             const StringRef &FS, const TargetMachine &TM)
+    : TileGenSubtargetInfo(TM.getTargetTriple(), CPU, TuneCPU, FS),
+      InstrInfo(initializeSubtargetDependencies(CPU, TuneCPU, FS)),
+      TLInfo(TM, *this), FrameLowering(*this) {}

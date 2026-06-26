@@ -1,9 +1,8 @@
 //===--  TileExpandPseudo.cpp - Expand Pseudo Instructions ----------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -12,57 +11,52 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "tile-expand-pseudo"
-
 #include "Tile.h"
-#include "TileTargetMachine.h"
+#include "TileInstrInfo.h"
+#include "TileMachineFunction.h"
+#include "TileSubtarget.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/ADT/Statistic.h"
 
 using namespace llvm;
 
+#define DEBUG_TYPE "tile-expand-pseudo"
+
 namespace {
 struct TileExpandPseudo : public MachineFunctionPass {
-
-  TargetMachine &TM;
-  const TargetInstrInfo *TII;
-
   static char ID;
-  TileExpandPseudo(TargetMachine &tm)
-      : MachineFunctionPass(ID), TM(tm), TII(tm.getInstrInfo()) {}
+  TileExpandPseudo() : MachineFunctionPass(ID) {}
 
-  virtual const char *getPassName() const {
-    return "Tile PseudoInstrs Expansion";
-  }
+  StringRef getPassName() const override { return "Tile PseudoInstrs Expansion"; }
 
-  bool runOnMachineFunction(MachineFunction &F);
-  bool runOnMachineBasicBlock(MachineBasicBlock &MBB);
+  bool runOnMachineFunction(MachineFunction &F) override;
 
 private:
-  void ExpandBuildPairF64(MachineBasicBlock &, MachineBasicBlock::iterator);
-  void
-  ExpandExtractElementF64(MachineBasicBlock &, MachineBasicBlock::iterator);
+  bool runOnMachineBasicBlock(MachineBasicBlock &MBB, const TileInstrInfo *TII);
 };
 char TileExpandPseudo::ID = 0;
-} // end of anonymous namespace
+} // end anonymous namespace
 
 bool TileExpandPseudo::runOnMachineFunction(MachineFunction &F) {
+  const TileInstrInfo *TII =
+      static_cast<const TileInstrInfo *>(F.getSubtarget().getInstrInfo());
   bool Changed = false;
-
-  for (MachineFunction::iterator I = F.begin(); I != F.end(); ++I)
-    Changed |= runOnMachineBasicBlock(*I);
-
+  for (MachineBasicBlock &MBB : F)
+    Changed |= runOnMachineBasicBlock(MBB, TII);
   return Changed;
 }
 
-bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
-
+bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB,
+                                              const TileInstrInfo *TII) {
   bool Changed = false;
   MachineFunction &MF = *MBB.getParent();
-  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
   TileFunctionInfo *TFI = MF.getInfo<TileFunctionInfo>();
+  // Float-compare expansion (the only consumer) is staged in with float support
+  // in a later phase; until then nothing here reads a per-function FMF flag.
+  bool NoNaNs = false;
+
   for (MachineBasicBlock::iterator I = MBB.begin(); I != MBB.end();) {
     const MCInstrDesc &MCId = I->getDesc();
 
@@ -73,40 +67,42 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
     case Tile::NET: {
       unsigned SraReg = I->getOperand(1).getReg();
       unsigned SrbReg = I->getOperand(2).getReg();
-      if ((SraReg == Tile::UDN0  && SrbReg != Tile::ZERO)
-	      || (SraReg == Tile::IDN0 && SrbReg != Tile::ZERO)) {
+      if ((SraReg == Tile::UDN0 && SrbReg != Tile::ZERO) ||
+          (SraReg == Tile::IDN0 && SrbReg != Tile::ZERO)) {
         BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::ADD),
-                I->getOperand(1).getReg()).addReg(Tile::ZERO).addReg(SrbReg);
+                I->getOperand(1).getReg())
+            .addReg(Tile::ZERO)
+            .addReg(SrbReg);
         break;
-      } else {
-        ++I;
-        continue;
       }
+      ++I;
+      continue;
     }
 
     case Tile::VAARG_SP:
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::ADDLI),
               I->getOperand(0).getReg())
           .addReg(I->getOperand(1).getReg())
-          .addImm(MFI->getStackSize() + MFI->getOffsetAdjustment());
+          .addImm(MFI.getStackSize() + MFI.getOffsetAdjustment());
       break;
 
-    // The addr alloca returned should by adjusted by the size
-    // of Tile 16bytes zone and arg outgoing zone.
+    // The address alloca returns must be adjusted by the size of the Tile
+    // 16-byte zone and the outgoing-args zone.
     case Tile::ALLOCA_ADDR:
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::ADDLI),
               I->getOperand(0).getReg())
           .addReg(I->getOperand(1).getReg())
-          .addImm(TFI->getMaxCallFrameSize() + (MFI->hasCalls() ? 16 : 0));
+          .addImm(TFI->getMaxCallFrameSize() + (MFI.hasCalls() ? 16 : 0));
       break;
 
     case Tile::ALLOCA_SP: {
       unsigned SrcSP = Tile::SP;
-      if (MFI->hasCalls())
+      if (MFI.hasCalls())
         SrcSP = I->getOperand(2).getReg();
-
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::ADD),
-              I->getOperand(0).getReg()).addReg(Tile::ZERO).addReg(SrcSP);
+              I->getOperand(0).getReg())
+          .addReg(Tile::ZERO)
+          .addReg(SrcSP);
       break;
     }
 
@@ -134,8 +130,9 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
     case Tile::FDOUBLE_CMP_GEO32:
     case Tile::FDOUBLE_CMP_EQO32:
     case Tile::FDOUBLE_CMP_NEO32:
-      if (!TM.Options.NoNaNsFPMath)
+      if (!NoNaNs)
         llvm_unreachable("All SETOXX should be expanded to SETO and SETXX");
+      [[fallthrough]];
 
     case Tile::FSINGLE_CMP_LT:
     case Tile::FSINGLE_CMP_LE:
@@ -161,21 +158,12 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
     case Tile::FDOUBLE_CMP_GE32:
     case Tile::FDOUBLE_CMP_EQ32:
     case Tile::FDOUBLE_CMP_NE32: {
-
       unsigned DestReg = I->getOperand(0).getReg();
       unsigned SraReg = I->getOperand(1).getReg();
       unsigned SrbReg = I->getOperand(2).getReg();
       unsigned OldOpcode = MCId.getOpcode();
       unsigned NewOpcode = Tile::FDOUBLE_ADD_FLAGS;
-      // Bit Name
-      // 25  unorder
-      // 26  lt
-      // 27  le
-      // 28  gt
-      // 29  ge
-      // 30  eq
-      // 31  ne
-      int64_t FPResOff[6] = { 30, 29, 28, 27, 26, 31 };
+      int64_t FPResOff[6] = {30, 29, 28, 27, 26, 31};
       int64_t BitOff;
       if (OldOpcode >= Tile::FSINGLE_CMP_EQ) {
         NewOpcode = Tile::FSINGLE_ADD1;
@@ -183,9 +171,12 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
       } else
         BitOff = FPResOff[(OldOpcode - Tile::FDOUBLE_CMP_EQ) / 6];
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(NewOpcode), DestReg)
-          .addReg(SraReg).addReg(SrbReg);
+          .addReg(SraReg)
+          .addReg(SrbReg);
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::BFEXTU), DestReg)
-          .addReg(DestReg).addImm(BitOff).addImm(BitOff);
+          .addReg(DestReg)
+          .addImm(BitOff)
+          .addImm(BitOff);
       break;
     }
 
@@ -213,23 +204,13 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
     case Tile::FDOUBLE_CMP_GEU32:
     case Tile::FDOUBLE_CMP_EQU32:
     case Tile::FDOUBLE_CMP_NEU32: {
-
       unsigned DestReg = I->getOperand(0).getReg();
       unsigned SraReg = I->getOperand(1).getReg();
       unsigned SrbReg = I->getOperand(2).getReg();
       unsigned OldOpcode = MCId.getOpcode();
       unsigned NewOpcode = Tile::FDOUBLE_ADD_FLAGS;
-      // Bit Name
-      // 25  unorder
-      // 26  lt
-      // 27  le
-      // 28  gt
-      // 29  ge
-      // 30  eq
-      // 31  ne
-      int64_t FPResOff[6] = { 30, 29, 28, 27, 26, 31 };
+      int64_t FPResOff[6] = {30, 29, 28, 27, 26, 31};
       int64_t BitOff;
-      int64_t BitMask;
       if (OldOpcode >= Tile::FSINGLE_CMP_EQ) {
         NewOpcode = Tile::FSINGLE_ADD1;
         BitOff = FPResOff[(OldOpcode - Tile::FSINGLE_CMP_EQ) / 6];
@@ -237,20 +218,26 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
         BitOff = FPResOff[(OldOpcode - Tile::FDOUBLE_CMP_EQ) / 6];
 
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(NewOpcode), DestReg)
-          .addReg(SraReg).addReg(SrbReg);
-      if (TM.Options.NoNaNsFPMath) {
+          .addReg(SraReg)
+          .addReg(SrbReg);
+      if (NoNaNs) {
         BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::BFEXTU), DestReg)
-            .addReg(DestReg).addImm(BitOff).addImm(BitOff);
+            .addReg(DestReg)
+            .addImm(BitOff)
+            .addImm(BitOff);
         break;
       }
 
-      BitMask = (1LL << (BitOff - 25)) | 1LL;
+      int64_t BitMask = (1LL << (BitOff - 25)) | 1LL;
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::SHRUI), DestReg)
-          .addReg(DestReg).addImm(25);
+          .addReg(DestReg)
+          .addImm(25);
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::ANDI), DestReg)
-          .addReg(DestReg).addImm(BitMask);
+          .addReg(DestReg)
+          .addImm(BitMask);
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::CMPNE), DestReg)
-          .addReg(DestReg).addReg(Tile::ZERO);
+          .addReg(DestReg)
+          .addReg(Tile::ZERO);
       break;
     }
 
@@ -262,7 +249,6 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
     case Tile::FDOUBLE_CMP_O32:
     case Tile::FSINGLE_CMP_UO32:
     case Tile::FDOUBLE_CMP_UO32: {
-
       unsigned DestReg = I->getOperand(0).getReg();
       unsigned SraReg = I->getOperand(1).getReg();
       unsigned SrbReg = I->getOperand(2).getReg();
@@ -273,26 +259,27 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
       if (OldOpcode >= Tile::FSINGLE_CMP_O)
         NewOpcode1 = Tile::FSINGLE_ADD1;
 
-      if (OldOpcode == Tile::FSINGLE_CMP_O ||
-          OldOpcode == Tile::FDOUBLE_CMP_O ||
+      if (OldOpcode == Tile::FSINGLE_CMP_O || OldOpcode == Tile::FDOUBLE_CMP_O ||
           OldOpcode == Tile::FSINGLE_CMP_O32 ||
           OldOpcode == Tile::FDOUBLE_CMP_O32)
         NewOpcode2 = Tile::CMPEQ;
 
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(NewOpcode1), DestReg)
-          .addReg(SraReg).addReg(SrbReg);
+          .addReg(SraReg)
+          .addReg(SrbReg);
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::SHRUI), DestReg)
-          .addReg(DestReg).addImm(25);
+          .addReg(DestReg)
+          .addImm(25);
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(Tile::ANDI), DestReg)
-          .addReg(DestReg).addImm(0x1);
+          .addReg(DestReg)
+          .addImm(0x1);
       BuildMI(MBB, I, I->getDebugLoc(), TII->get(NewOpcode2), DestReg)
-          .addReg(DestReg).addReg(Tile::ZERO);
+          .addReg(DestReg)
+          .addReg(Tile::ZERO);
       break;
     }
-
     }
 
-    // Delete original instr.
     MBB.erase(I++);
     Changed = true;
   }
@@ -300,7 +287,6 @@ bool TileExpandPseudo::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
   return Changed;
 }
 
-/// Returns a pass that expands pseudo instrs into real instrs.
-FunctionPass *llvm::createTileExpandPseudoPass(TileTargetMachine &tm) {
-  return new TileExpandPseudo(tm);
+FunctionPass *llvm::createTileExpandPseudoPass() {
+  return new TileExpandPseudo();
 }

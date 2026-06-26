@@ -1,18 +1,16 @@
 //===-- TileFrameLowering.h - Define frame lowering for Tile ----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TILE_FRAMEINFO_H
-#define TILE_FRAMEINFO_H
+#ifndef LLVM_LIB_TARGET_TILE_TILEFRAMELOWERING_H
+#define LLVM_LIB_TARGET_TILE_TILEFRAMELOWERING_H
 
-#include "Tile.h"
-#include "TileSubtarget.h"
-#include "llvm/Target/TargetFrameLowering.h"
+#include "llvm/CodeGen/TargetFrameLowering.h"
+#include "llvm/Support/TypeSize.h"
 
 namespace llvm {
 class TileSubtarget;
@@ -23,29 +21,27 @@ protected:
 
 public:
   explicit TileFrameLowering(const TileSubtarget &sti)
-      : TargetFrameLowering(StackGrowsDown, 8, 0), STI(sti) {}
+      : TargetFrameLowering(StackGrowsDown, Align(8), 0), STI(sti) {}
 
-  // Insert prolog and epilog code into the function.
-  void emitPrologue(MachineFunction &MF) const;
-  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
+  void emitPrologue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
+  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
 
-  void eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                     MachineBasicBlock &MBB,
-                                     MachineBasicBlock::iterator I) const;
+  MachineBasicBlock::iterator
+  eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
+                                MachineBasicBlock::iterator I) const override;
 
-  bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                 MachineBasicBlock::iterator MI,
-                                 const std::vector<CalleeSavedInfo> &CSI,
-                                 const TargetRegisterInfo *TRI) const;
+  bool hasReservedCallFrame(const MachineFunction &MF) const override;
 
-  bool hasFP(const MachineFunction &MF) const;
-  bool hasReservedCallFrame(const MachineFunction &MF) const;
+  void determineCalleeSaves(MachineFunction &MF, BitVector &SavedRegs,
+                            RegScavenger *RS) const override;
 
-  int getFrameIndexOffset(const MachineFunction &MF, int FI) const;
-  void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                            RegScavenger *RS) const;
+  StackOffset getFrameIndexReference(const MachineFunction &MF, int FI,
+                                     Register &FrameReg) const override;
+
+protected:
+  bool hasFPImpl(const MachineFunction &MF) const override;
 };
 
-} // End llvm namespace
+} // end namespace llvm
 
-#endif
+#endif // LLVM_LIB_TARGET_TILE_TILEFRAMELOWERING_H
