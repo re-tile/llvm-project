@@ -78,6 +78,8 @@ private:
   const TileSubtarget &Subtarget;
 
   SDValue lowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerJumpTable(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerBR_JT(SDValue Op, SelectionDAG &DAG) const;
 
   SDValue LowerCallResult(SDValue Chain, SDValue InGlue,
                           CallingConv::ID CallConv, bool isVarArg,

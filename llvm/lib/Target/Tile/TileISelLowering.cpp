@@ -132,6 +132,8 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
 
   // Addresses are materialized with the moveli/shl16insli halfword sequence.
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
+  setOperationAction(ISD::JumpTable, MVT::i64, Custom);
+  setOperationAction(ISD::BR_JT, MVT::Other, Custom);
 
   setTargetDAGCombine(ISD::SELECT);
   setTargetDAGCombine(ISD::ZERO_EXTEND);
@@ -186,7 +188,9 @@ EVT TileTargetLowering::getSetCCResultType(const DataLayout &, LLVMContext &,
 }
 
 unsigned TileTargetLowering::getJumpTableEncoding() const {
-  return MachineJumpTableInfo::EK_Inline;
+  // Absolute 64-bit block addresses in .rodata; lowerBR_JT loads an entry and
+  // jumps to it. The generic AsmPrinter emits these entries directly.
+  return MachineJumpTableInfo::EK_BlockAddress;
 }
 
 bool TileTargetLowering::isOffsetFoldingLegal(
@@ -221,6 +225,47 @@ SDValue TileTargetLowering::lowerGlobalAddress(SDValue Op,
   return DAG.getNode(TileISD::SAR16, DL, MVT::i64, Addr, Low);
 }
 
+SDValue TileTargetLowering::lowerJumpTable(SDValue Op, SelectionDAG &DAG) const {
+  const JumpTableSDNode *JT = cast<JumpTableSDNode>(Op);
+  SDLoc DL(Op);
+  EVT PtrVT = Op.getValueType();
+
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
+    report_fatal_error("Tile: PIC jump table lowering not yet supported");
+
+  SDValue High =
+      DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW2_LAST);
+  SDValue Middle = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW1);
+  SDValue Low = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW0);
+
+  SDValue Addr = DAG.getNode(TileISD::MOVE, DL, PtrVT, High);
+  Addr = DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Middle);
+  return DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Low);
+}
+
+SDValue TileTargetLowering::lowerBR_JT(SDValue Op, SelectionDAG &DAG) const {
+  SDValue Chain = Op->getOperand(0);
+  SDValue Table = Op->getOperand(1);
+  SDValue Index = Op->getOperand(2);
+  SDLoc DL(Op);
+  EVT PtrVT = getPointerTy(DAG.getDataLayout());
+
+  const JumpTableSDNode *JT = cast<JumpTableSDNode>(Table);
+  SDValue JTI = DAG.getTargetJumpTable(JT->getIndex(), PtrVT);
+
+  // Address of the selected entry = Table + Index * 8; load the absolute target
+  // it holds and jump there. BRINDJT carries the jump-table index so the
+  // indirect branch records its successor blocks.
+  Index =
+      DAG.getNode(ISD::SHL, DL, PtrVT, Index, DAG.getConstant(3, DL, MVT::i32));
+  SDValue Addr = DAG.getNode(ISD::ADD, DL, PtrVT, Index, Table);
+  SDValue Target = DAG.getLoad(
+      PtrVT, DL, Chain, Addr,
+      MachinePointerInfo::getJumpTable(DAG.getMachineFunction()));
+  return DAG.getNode(TileISD::BRINDJT, DL, MVT::Other, Target.getValue(1),
+                     Target, JTI);
+}
+
 SDValue TileTargetLowering::LowerOperation(SDValue Op,
                                            SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
@@ -233,6 +278,10 @@ SDValue TileTargetLowering::LowerOperation(SDValue Op,
     return Op;
   case ISD::GlobalAddress:
     return lowerGlobalAddress(Op, DAG);
+  case ISD::JumpTable:
+    return lowerJumpTable(Op, DAG);
+  case ISD::BR_JT:
+    return lowerBR_JT(Op, DAG);
   }
   return SDValue();
 }
