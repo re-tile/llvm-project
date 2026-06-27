@@ -82,7 +82,45 @@ public:
     case 'U': // Non-auto-incrementing memory.
       Info.setAllowsMemory();
       return true;
+    case 'R': // R00-R10: a single register r0-r10.
+      if (Name[1] >= '0' && Name[1] <= '9' && Name[2] >= '0' &&
+          Name[2] <= '9' && (Name[1] - '0') * 10 + (Name[2] - '0') <= 10) {
+        Info.setAllowsRegister();
+        Name += 2;
+        return true;
+      }
+      return false;
+    case 'Z': // Z0/Z1: the all-ones low or high word constant.
+      if (Name[1] == '0' || Name[1] == '1') {
+        Name += 1;
+        return true;
+      }
+      return false;
     }
+  }
+
+  std::string convertConstraint(const char *&Constraint) const override {
+    // Hand the multi-character tilegx constraints to LLVM with the length
+    // markers it expects: "@N" for an N-character code, "^" for two.
+    switch (*Constraint) {
+    case 'R':
+      if (Constraint[1] >= '0' && Constraint[1] <= '9' && Constraint[2] >= '0' &&
+          Constraint[2] <= '9' &&
+          (Constraint[1] - '0') * 10 + (Constraint[2] - '0') <= 10) {
+        std::string R = "@3" + std::string(Constraint, 3);
+        Constraint += 2;
+        return R;
+      }
+      break;
+    case 'Z':
+      if (Constraint[1] == '0' || Constraint[1] == '1') {
+        std::string R = "^" + std::string(Constraint, 2);
+        Constraint += 1;
+        return R;
+      }
+      break;
+    }
+    return TargetInfo::convertConstraint(Constraint);
   }
 
   std::string_view getClobbers() const override { return ""; }

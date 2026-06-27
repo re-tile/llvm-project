@@ -1271,6 +1271,16 @@ TileTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
 //                           Tile Inline Assembly Support
 //===----------------------------------------------------------------------===//
 
+// "R00".."R10" name a single GPR r0-r10; "Z0"/"Z1" are the all-ones low or
+// high word immediates. These are the multi-character tilegx constraints.
+static int parseRConstraint(StringRef C) {
+  if (C.size() != 3 || C[0] != 'R' || C[1] < '0' || C[1] > '9' || C[2] < '0' ||
+      C[2] > '9')
+    return -1;
+  int N = (C[1] - '0') * 10 + (C[2] - '0');
+  return N <= 10 ? N : -1;
+}
+
 TileTargetLowering::ConstraintType
 TileTargetLowering::getConstraintType(StringRef Constraint) const {
   // 'd' : An address register. 'y' : Equivalent to r (compatibility).
@@ -1283,7 +1293,27 @@ TileTargetLowering::getConstraintType(StringRef Constraint) const {
       return C_RegisterClass;
     }
   }
+  if (parseRConstraint(Constraint) >= 0)
+    return C_Register;
+  if (Constraint == "Z0" || Constraint == "Z1")
+    return C_Other;
   return TargetLowering::getConstraintType(Constraint);
+}
+
+void TileTargetLowering::LowerAsmOperandForConstraint(
+    SDValue Op, StringRef Constraint, std::vector<SDValue> &Ops,
+    SelectionDAG &DAG) const {
+  if (Constraint == "Z0" || Constraint == "Z1") {
+    if (auto *C = dyn_cast<ConstantSDNode>(Op)) {
+      uint64_t Want = Constraint == "Z0" ? 0xffffffffULL : 0xffffffff00000000ULL;
+      if (C->getZExtValue() == Want) {
+        Ops.push_back(DAG.getTargetConstant(Want, SDLoc(Op), MVT::i64));
+        return;
+      }
+    }
+    return;
+  }
+  TargetLowering::LowerAsmOperandForConstraint(Op, Constraint, Ops, DAG);
 }
 
 TargetLowering::ConstraintWeight
@@ -1318,6 +1348,10 @@ TileTargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
     case 'r':
       return std::make_pair(0U, &Tile::CPURegsRegClass);
     }
+  }
+  if (int N = parseRConstraint(Constraint); N >= 0) {
+    std::string Reg = ("{r" + Twine(N) + "}").str();
+    return TargetLowering::getRegForInlineAsmConstraint(TRI, Reg, VT);
   }
   return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
 }
