@@ -584,6 +584,9 @@ std::unique_ptr<TargetCodeGenInfo>
 createTCETargetCodeGenInfo(CodeGenModule &CGM);
 
 std::unique_ptr<TargetCodeGenInfo>
+createTileTargetCodeGenInfo(CodeGenModule &CGM);
+
+std::unique_ptr<TargetCodeGenInfo>
 createVETargetCodeGenInfo(CodeGenModule &CGM);
 
 std::unique_ptr<TargetCodeGenInfo>
