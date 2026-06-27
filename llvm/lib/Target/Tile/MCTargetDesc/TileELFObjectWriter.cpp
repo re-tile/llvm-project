@@ -91,6 +91,26 @@ unsigned TileELFObjectWriter::getRelocType(const MCFixup &Fixup,
     return ELF::R_TILEGX_JUMPOFF_X1_PLT;
   case Tile::fixup_Tile_X1_BROFF:
     return ELF::R_TILEGX_BROFF_X1;
+  case Tile::fixup_Tile_X1_HW0_TLS_GD:
+    return ELF::R_TILEGX_IMM16_X1_HW0_TLS_GD;
+  case Tile::fixup_Tile_X1_HW1_LAST_TLS_GD:
+    return ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_GD;
+  case Tile::fixup_Tile_X1_HW0_TLS_IE:
+    return ELF::R_TILEGX_IMM16_X1_HW0_TLS_IE;
+  case Tile::fixup_Tile_X1_HW1_LAST_TLS_IE:
+    return ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_IE;
+  case Tile::fixup_Tile_X1_HW0_TLS_LE:
+    return ELF::R_TILEGX_IMM16_X1_HW0_TLS_LE;
+  case Tile::fixup_Tile_X1_HW1_LAST_TLS_LE:
+    return ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_LE;
+  case Tile::fixup_Tile_X1_TLS_GD_CALL:
+    return ELF::R_TILEGX_TLS_GD_CALL;
+  case Tile::fixup_Tile_X1_TLS_GD_ADD:
+    return ELF::R_TILEGX_IMM8_X1_TLS_GD_ADD;
+  case Tile::fixup_Tile_X1_TLS_ADD:
+    return ELF::R_TILEGX_IMM8_X1_TLS_ADD;
+  case Tile::fixup_Tile_X1_TLS_IE_LOAD:
+    return ELF::R_TILEGX_TLS_IE_LOAD;
   }
 }
 

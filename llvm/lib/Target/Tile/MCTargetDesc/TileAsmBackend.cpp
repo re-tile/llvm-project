@@ -101,6 +101,16 @@ public:
         {"fixup_Tile_X1_JUMPOFF", 31, 27, 0},
         {"fixup_Tile_X1_JUMPOFF_PLT", 31, 27, 0},
         {"fixup_Tile_X1_BROFF", 31, 17, 0},
+        {"fixup_Tile_X1_HW0_TLS_GD", 31, 16, 0},
+        {"fixup_Tile_X1_HW1_LAST_TLS_GD", 31, 16, 0},
+        {"fixup_Tile_X1_HW0_TLS_IE", 31, 16, 0},
+        {"fixup_Tile_X1_HW1_LAST_TLS_IE", 31, 16, 0},
+        {"fixup_Tile_X1_HW0_TLS_LE", 31, 16, 0},
+        {"fixup_Tile_X1_HW1_LAST_TLS_LE", 31, 16, 0},
+        {"fixup_Tile_X1_TLS_GD_CALL", 31, 27, 0},
+        {"fixup_Tile_X1_TLS_GD_ADD", 31, 8, 0},
+        {"fixup_Tile_X1_TLS_ADD", 31, 8, 0},
+        {"fixup_Tile_X1_TLS_IE_LOAD", 31, 8, 0},
     };
 
     if (Kind < FirstTargetFixupKind)

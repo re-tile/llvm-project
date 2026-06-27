@@ -72,14 +72,11 @@ void TileInstPrinter::printUnsignedImm(const MCInst *MI, int opNum,
 bool TileInstPrinter::printPICLNKReg(const MCInst *MI, unsigned opNum,
                                      raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(opNum);
-  const MCOperand &FName = MI->getOperand(opNum + 1);
-
   assert(Op.isReg());
-
-  MAI.printExpr(O, *FName.getExpr());
-  O << " = . + 8" << '\n';
-  O << "\tlnk " << getRegisterName(Op.getReg());
-
+  // The PC-anchor label that GNU as writes as `L = . + 8` is emitted by the
+  // AsmPrinter as a real label after this bundle, so both the textual and the
+  // object paths agree; here we only print the lnk itself.
+  O << "lnk\t" << StringRef(getRegisterName(Op.getReg())).lower();
   return true;
 }
 

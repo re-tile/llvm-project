@@ -22,6 +22,8 @@ namespace llvm {
 class Triple;
 class MCTargetOptions;
 class MCSpecifierExpr;
+class MCValue;
+class MCAssembler;
 class raw_ostream;
 
 class TileMCAsmInfo : public MCAsmInfoELF {
@@ -33,6 +35,9 @@ public:
 
   void printSpecifierExpr(raw_ostream &OS,
                           const MCSpecifierExpr &Expr) const override;
+
+  bool evaluateAsRelocatableImpl(const MCSpecifierExpr &Expr, MCValue &Res,
+                                 const MCAssembler *Asm) const override;
 };
 
 namespace Tile {

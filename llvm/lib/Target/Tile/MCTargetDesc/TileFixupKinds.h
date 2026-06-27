@@ -51,6 +51,18 @@ enum Fixups {
   fixup_Tile_X1_JUMPOFF_PLT,
 
   fixup_Tile_X1_BROFF,
+
+  // Thread-local storage halfword and relaxation-hint relocations.
+  fixup_Tile_X1_HW0_TLS_GD,
+  fixup_Tile_X1_HW1_LAST_TLS_GD,
+  fixup_Tile_X1_HW0_TLS_IE,
+  fixup_Tile_X1_HW1_LAST_TLS_IE,
+  fixup_Tile_X1_HW0_TLS_LE,
+  fixup_Tile_X1_HW1_LAST_TLS_LE,
+  fixup_Tile_X1_TLS_GD_CALL,
+  fixup_Tile_X1_TLS_GD_ADD,
+  fixup_Tile_X1_TLS_ADD,
+  fixup_Tile_X1_TLS_IE_LOAD,
   // Marker
   LastTargetFixupKind,
   NumTargetFixupKinds = LastTargetFixupKind - FirstTargetFixupKind

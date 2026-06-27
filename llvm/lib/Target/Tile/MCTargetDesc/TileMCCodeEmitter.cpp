@@ -103,6 +103,10 @@ TileMCCodeEmitter::getMachineOpValue(const MCInst &MI, const MCOperand &MO,
   // relocation.
   if (const auto *SE = dyn_cast<MCSpecifierExpr>(Expr)) {
     Tile::Fixups Kind;
+    // The GOT base self-computation feeds a sym - pclabel difference through the
+    // PCREL halfword fixups; mark them PC-relative so MC folds the local label
+    // into the addend instead of rejecting the subtraction.
+    bool PCRel = false;
     switch (SE->getSpecifier()) {
     default:
       report_fatal_error("Tile: unsupported relocation specifier");
@@ -118,8 +122,54 @@ TileMCCodeEmitter::getMachineOpValue(const MCInst &MI, const MCOperand &MO,
     case TileII::MO_HW2_LAST:
       Kind = Tile::fixup_Tile_X1_HW2_LAST;
       break;
+    // GOT-relative halfwords for PIC global access.
+    case TileII::MO_HW0_GOT:
+      Kind = Tile::fixup_Tile_X1_HW0_GOT;
+      break;
+    case TileII::MO_HW1_LAST_GOT:
+      Kind = Tile::fixup_Tile_X1_HW1_LAST_GOT;
+      break;
+    // PC-relative halfwords for the GOT base self-computation. The textual
+    // operator is the plain hw0/hw1_last on a sym - label difference; the
+    // PCREL relocation is selected here and matches GNU as.
+    case TileII::MO_HW0_PIC:
+      Kind = Tile::fixup_Tile_X1_HW0_PCREL;
+      PCRel = true;
+      break;
+    case TileII::MO_HW1_LAST_PIC:
+      Kind = Tile::fixup_Tile_X1_HW1_LAST_PCREL;
+      PCRel = true;
+      break;
+    // Thread-local storage halfwords and relaxation hints.
+    case TileII::MO_HW0_TLS_GD:
+      Kind = Tile::fixup_Tile_X1_HW0_TLS_GD;
+      break;
+    case TileII::MO_HW1_LAST_TLS_GD:
+      Kind = Tile::fixup_Tile_X1_HW1_LAST_TLS_GD;
+      break;
+    case TileII::MO_HW0_TLS_IE:
+      Kind = Tile::fixup_Tile_X1_HW0_TLS_IE;
+      break;
+    case TileII::MO_HW1_LAST_TLS_IE:
+      Kind = Tile::fixup_Tile_X1_HW1_LAST_TLS_IE;
+      break;
+    case TileII::MO_HW0_TLS_LE:
+      Kind = Tile::fixup_Tile_X1_HW0_TLS_LE;
+      break;
+    case TileII::MO_HW1_LAST_TLS_LE:
+      Kind = Tile::fixup_Tile_X1_HW1_LAST_TLS_LE;
+      break;
+    case TileII::MO_TLS_ADD:
+      Kind = Tile::fixup_Tile_X1_TLS_ADD;
+      break;
+    case TileII::MO_TLS_GD_ADD:
+      Kind = Tile::fixup_Tile_X1_TLS_GD_ADD;
+      break;
+    case TileII::MO_TLS_IE_LOAD:
+      Kind = Tile::fixup_Tile_X1_TLS_IE_LOAD;
+      break;
     }
-    Fixups.push_back(MCFixup::create(0, Expr, MCFixupKind(Kind)));
+    Fixups.push_back(MCFixup::create(0, Expr, MCFixupKind(Kind), PCRel));
     return 0;
   }
 
@@ -132,9 +182,26 @@ TileMCCodeEmitter::getJumpTargetOpValue(const MCInst &MI, unsigned OpNo,
                                         const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
   assert(MO.isExpr() && "getJumpTargetOpValue expects an expression");
-  Fixups.push_back(MCFixup::create(0, MO.getExpr(),
-                                   MCFixupKind(Tile::fixup_Tile_X1_JUMPOFF),
-                                   /*PCRel=*/true));
+  const MCExpr *Expr = MO.getExpr();
+
+  // A PIC call goes through the PLT and a general-dynamic TLS access calls
+  // __tls_get_addr; both ride on the call operand's relocation specifier.
+  Tile::Fixups Kind = Tile::fixup_Tile_X1_JUMPOFF;
+  bool PCRel = true;
+  if (const auto *SE = dyn_cast<MCSpecifierExpr>(Expr)) {
+    switch (SE->getSpecifier()) {
+    default:
+      report_fatal_error("Tile: unsupported call relocation specifier");
+    case TileII::MO_PLT_CALL:
+      Kind = Tile::fixup_Tile_X1_JUMPOFF_PLT;
+      break;
+    case TileII::MO_TLS_GD_CALL:
+      Kind = Tile::fixup_Tile_X1_TLS_GD_CALL;
+      PCRel = false;
+      break;
+    }
+  }
+  Fixups.push_back(MCFixup::create(0, Expr, MCFixupKind(Kind), PCRel));
   return 0;
 }
 
