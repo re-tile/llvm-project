@@ -17,11 +17,24 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/MC/MCDwarf.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Target/TargetOptions.h"
 
 using namespace llvm;
+
+static void emitCFI(MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+                    const DebugLoc &DL, const TileInstrInfo &TII,
+                    const MCCFIInstruction &CFI) {
+  MachineFunction &MF = *MBB.getParent();
+  unsigned Idx = MF.addFrameInst(CFI);
+  BuildMI(MBB, MBBI, DL, TII.get(TargetOpcode::CFI_INSTRUCTION))
+      .addCFIIndex(Idx)
+      .setMIFlag(MachineInstr::FrameSetup);
+}
 
 bool TileFrameLowering::hasFPImpl(const MachineFunction &MF) const {
   const MachineFrameInfo &MFI = MF.getFrameInfo();
@@ -66,6 +79,8 @@ void TileFrameLowering::emitPrologue(MachineFunction &MF,
   MachineFrameInfo &MFI = MF.getFrameInfo();
   const TileInstrInfo &TII =
       *static_cast<const TileInstrInfo *>(MF.getSubtarget().getInstrInfo());
+  const TargetRegisterInfo &TRI =
+      *MF.getSubtarget().getRegisterInfo();
   MachineBasicBlock::iterator MBBI = MBB.begin();
   DebugLoc dl = MBBI != MBB.end() ? MBBI->getDebugLoc() : DebugLoc();
   unsigned SP = Tile::SP;
@@ -89,9 +104,15 @@ void TileFrameLowering::emitPrologue(MachineFunction &MF,
         .addReg(SP)
         .addReg(ZERO);
     BuildMI(MBB, MBBI, dl, TII.get(Tile::ST)).addReg(SP).addReg(Tile::LR);
+    // lr is stored at the incoming sp, which is the entry CFA.
+    emitCFI(MBB, MBBI, dl, TII,
+            MCCFIInstruction::createOffset(
+                nullptr, TRI.getDwarfRegNum(Tile::LR, true), 0));
   }
 
   addImmR(SP, TempReg0, -StackSize, TII, MBB, MBBI, dl);
+  emitCFI(MBB, MBBI, dl, TII,
+          MCCFIInstruction::cfiDefCfaOffset(nullptr, StackSize));
 
   if (MFI.hasCalls()) {
     BuildMI(MBB, MBBI, dl, TII.get(Tile::ADDI), TempReg0).addReg(SP).addImm(8);
@@ -100,10 +121,22 @@ void TileFrameLowering::emitPrologue(MachineFunction &MF,
         .addReg(TempReg1);
   }
 
-  if (hasFP(MF))
+  for (const CalleeSavedInfo &CSI : MFI.getCalleeSavedInfo()) {
+    int64_t Off = MFI.getObjectOffset(CSI.getFrameIdx()) +
+                  MFI.getOffsetAdjustment();
+    emitCFI(MBB, MBBI, dl, TII,
+            MCCFIInstruction::createOffset(
+                nullptr, TRI.getDwarfRegNum(CSI.getReg(), true), Off));
+  }
+
+  if (hasFP(MF)) {
     BuildMI(MBB, MBBI, dl, TII.get(Tile::ADD), Tile::FP)
         .addReg(SP)
         .addReg(ZERO);
+    emitCFI(MBB, MBBI, dl, TII,
+            MCCFIInstruction::createDefCfaRegister(
+                nullptr, TRI.getDwarfRegNum(Tile::FP, true)));
+  }
 }
 
 void TileFrameLowering::emitEpilogue(MachineFunction &MF,
