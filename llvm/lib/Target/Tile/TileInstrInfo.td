@@ -4801,6 +4801,90 @@ defm MTSPR_INTRINSIC
      : TileMTSPR_INTRINSIC
        <"mtspr", 0x3, 0x17, int_tilegx_mtspr>;
 
+//===----------------------------------------------------------------------===//
+// __insn_* builtin lowering
+//===----------------------------------------------------------------------===//
+
+// Builtins backed by instructions that already exist for ISel.
+def : Pat<(int_tilegx_addx CPU32Regs:$rsa, CPU32Regs:$rsb),
+          (ADDX CPU32Regs:$rsa, CPU32Regs:$rsb)>;
+def : Pat<(int_tilegx_clz CPURegs:$rs), (CLZ CPURegs:$rs)>;
+def : Pat<(int_tilegx_ctz CPURegs:$rs), (CTZ CPURegs:$rs)>;
+def : Pat<(int_tilegx_pcnt CPURegs:$rs), (PCNT CPURegs:$rs)>;
+def : Pat<(int_tilegx_revbytes CPURegs:$rs), (REVBYTES CPURegs:$rs)>;
+
+def : Pat<(int_tilegx_exch CPURegs:$rsa, CPURegs:$rsb),
+          (EXCH CPURegs:$rsa, CPURegs:$rsb)>;
+def : Pat<(int_tilegx_exch4 CPURegs:$rsa, CPU32Regs:$rsb),
+          (EXCH4 CPURegs:$rsa, CPU32Regs:$rsb)>;
+def : Pat<(int_tilegx_fetchadd CPURegs:$rsa, CPURegs:$rsb),
+          (FETCHADD CPURegs:$rsa, CPURegs:$rsb)>;
+def : Pat<(int_tilegx_fetchadd4 CPURegs:$rsa, CPU32Regs:$rsb),
+          (FETCHADD4 CPURegs:$rsa, CPU32Regs:$rsb)>;
+def : Pat<(int_tilegx_fetchand CPURegs:$rsa, CPURegs:$rsb),
+          (FETCHAND CPURegs:$rsa, CPURegs:$rsb)>;
+def : Pat<(int_tilegx_fetchand4 CPURegs:$rsa, CPU32Regs:$rsb),
+          (FETCHAND4 CPURegs:$rsa, CPU32Regs:$rsb)>;
+def : Pat<(int_tilegx_fetchor CPURegs:$rsa, CPURegs:$rsb),
+          (FETCHOR CPURegs:$rsa, CPURegs:$rsb)>;
+def : Pat<(int_tilegx_fetchor4 CPURegs:$rsa, CPU32Regs:$rsb),
+          (FETCHOR4 CPURegs:$rsa, CPU32Regs:$rsb)>;
+
+// Builtins backed by instructions not otherwise needed for ISel.
+def CRC32_32 : TileInstX0RRR<0x5, 0x14,
+    (outs CPURegs:$rd), (ins CPURegs:$rsa, CPURegs:$rsb),
+    "crc32_32\t$rd, $rsa, $rsb",
+    [(set (i64 CPURegs:$rd),
+      (int_tilegx_crc32_32 CPURegs:$rsa, CPURegs:$rsb))],
+    IIC_ALU, FrmRRR, S_X0>;
+def CRC32_8 : TileInstX0RRR<0x5, 0x15,
+    (outs CPURegs:$rd), (ins CPURegs:$rsa, CPURegs:$rsb),
+    "crc32_8\t$rd, $rsa, $rsb",
+    [(set (i64 CPURegs:$rd),
+      (int_tilegx_crc32_8 CPURegs:$rsa, CPURegs:$rsb))],
+    IIC_ALU, FrmRRR, S_X0>;
+def REVBITS : TileInstX0Unary<0x5, 0x52, 0x7,
+    (outs CPURegs:$rd), (ins CPURegs:$rs),
+    "revbits\t$rd, $rs",
+    [(set (i64 CPURegs:$rd), (int_tilegx_revbits CPURegs:$rs))],
+    IIC_ALU, FrmRRR, S_X0>;
+
+let Constraints = "$rd = $rf" in
+def MM : TileInstX0MM<0x3, 0x7,
+    (outs CPURegs:$rd),
+    (ins CPURegs:$rs, i64imm:$bfstart, i64imm:$bfend, CPURegs:$rf),
+    "mm\t$rd, $rs, $bfstart, $bfend",
+    [(set (i64 CPURegs:$rd),
+      (int_tilegx_mm CPURegs:$rf, CPURegs:$rs,
+       (i64 immSExt64:$bfstart), immSExt64:$bfend))],
+    IIC_BIT_P0, FrmRRR, S_X0>;
+
+let mayLoad = 1, mayStore = 1 in {
+def CMPEXCH : TileInstX1RRR<0x5, 0x7,
+    (outs CPURegs:$rd), (ins CPURegs:$rsa, CPURegs:$rsb),
+    "cmpexch\t$rd, $rsa, $rsb",
+    [(set (i64 CPURegs:$rd),
+      (int_tilegx_cmpexch CPURegs:$rsa, CPURegs:$rsb))],
+    IIC_MM, FrmRRR, S_X1>;
+def CMPEXCH4 : TileInstX1RRR<0x5, 0x6,
+    (outs CPU32Regs:$rd), (ins CPURegs:$rsa, CPU32Regs:$rsb),
+    "cmpexch4\t$rd, $rsa, $rsb",
+    [(set (i32 CPU32Regs:$rd),
+      (int_tilegx_cmpexch4 CPURegs:$rsa, CPU32Regs:$rsb))],
+    IIC_MM, FrmRRR, S_X1>;
+def FETCHADDGEZ : TileInstX1RRR<0x5, 0x14,
+    (outs CPURegs:$rd), (ins CPURegs:$rsa, CPURegs:$rsb),
+    "fetchaddgez\t$rd, $rsa, $rsb",
+    [(set (i64 CPURegs:$rd),
+      (int_tilegx_fetchaddgez CPURegs:$rsa, CPURegs:$rsb))],
+    IIC_MM, FrmRRR, S_X1>;
+def FETCHADDGEZ4 : TileInstX1RRR<0x5, 0x13,
+    (outs CPU32Regs:$rd), (ins CPURegs:$rsa, CPU32Regs:$rsb),
+    "fetchaddgez4\t$rd, $rsa, $rsb",
+    [(set (i32 CPU32Regs:$rd),
+      (int_tilegx_fetchaddgez4 CPURegs:$rsa, CPU32Regs:$rsb))],
+    IIC_MM, FrmRRR, S_X1>;
+}
 
 //===----------------------------------------------------------------------===//
 // Floating Point Support

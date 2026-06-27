@@ -11,10 +11,32 @@
 //===----------------------------------------------------------------------===//
 
 #include "Tile.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Basic/MacroBuilder.h"
+#include "clang/Basic/TargetBuiltins.h"
+#include "llvm/ADT/StringTable.h"
 
 using namespace clang;
 using namespace clang::targets;
+
+static constexpr int NumBuiltins =
+    clang::Tile::LastTSBuiltin - Builtin::FirstTSBuiltin;
+
+static constexpr llvm::StringTable BuiltinStrings =
+    CLANG_BUILTIN_STR_TABLE_START
+#define BUILTIN CLANG_BUILTIN_STR_TABLE
+#include "clang/Basic/BuiltinsTile.def"
+    ;
+
+static constexpr auto BuiltinInfos = Builtin::MakeInfos<NumBuiltins>({
+#define BUILTIN CLANG_BUILTIN_ENTRY
+#include "clang/Basic/BuiltinsTile.def"
+});
+
+llvm::SmallVector<Builtin::InfosShard>
+TileGXTargetInfo::getTargetBuiltins() const {
+  return {{&BuiltinStrings, BuiltinInfos}};
+}
 
 const char *const TileGXTargetInfo::GCCRegNames[] = {
     "r0",   "r1",   "r2",   "r3",   "r4",   "r5",   "r6",   "r7",

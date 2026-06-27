@@ -349,4 +349,51 @@ def int_tilegx_mfspr : ClangBuiltin<"__insn_mfspr">,
 
 def int_tilegx_mtspr : ClangBuiltin<"__insn_mtspr">,
   Intrinsic<[], [llvm_i64_ty, llvm_i64_ty], []>;
+
+// Scalar arithmetic and bit manipulation
+def int_tilegx_addx : ClangBuiltin<"__insn_addx">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem, Commutative]>;
+def int_tilegx_clz : ClangBuiltin<"__insn_clz">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_ctz : ClangBuiltin<"__insn_ctz">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_pcnt : ClangBuiltin<"__insn_pcnt">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_revbytes : ClangBuiltin<"__insn_revbytes">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_revbits : ClangBuiltin<"__insn_revbits">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_crc32_32 : ClangBuiltin<"__insn_crc32_32">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_crc32_8 : ClangBuiltin<"__insn_crc32_8">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mm : ClangBuiltin<"__insn_mm">,
+  Intrinsic<[llvm_i64_ty],
+            [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+
+// Atomic memory operations. The first argument is the address.
+def int_tilegx_exch : ClangBuiltin<"__insn_exch">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i64_ty], [IntrArgMemOnly]>;
+def int_tilegx_exch4 : ClangBuiltin<"__insn_exch4">,
+  Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrArgMemOnly]>;
+def int_tilegx_fetchadd : ClangBuiltin<"__insn_fetchadd">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i64_ty], [IntrArgMemOnly]>;
+def int_tilegx_fetchadd4 : ClangBuiltin<"__insn_fetchadd4">,
+  Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrArgMemOnly]>;
+def int_tilegx_fetchand : ClangBuiltin<"__insn_fetchand">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i64_ty], [IntrArgMemOnly]>;
+def int_tilegx_fetchand4 : ClangBuiltin<"__insn_fetchand4">,
+  Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrArgMemOnly]>;
+def int_tilegx_fetchor : ClangBuiltin<"__insn_fetchor">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i64_ty], [IntrArgMemOnly]>;
+def int_tilegx_fetchor4 : ClangBuiltin<"__insn_fetchor4">,
+  Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrArgMemOnly]>;
+def int_tilegx_fetchaddgez : ClangBuiltin<"__insn_fetchaddgez">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i64_ty], [IntrArgMemOnly]>;
+def int_tilegx_fetchaddgez4 : ClangBuiltin<"__insn_fetchaddgez4">,
+  Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrArgMemOnly]>;
+def int_tilegx_cmpexch : ClangBuiltin<"__insn_cmpexch">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i64_ty], [IntrArgMemOnly]>;
+def int_tilegx_cmpexch4 : ClangBuiltin<"__insn_cmpexch4">,
+  Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrArgMemOnly]>;
 } // end TargetPrefix

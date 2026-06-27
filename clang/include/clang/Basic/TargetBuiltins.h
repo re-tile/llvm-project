@@ -455,6 +455,16 @@ namespace clang {
     };
   }
 
+  /// TILE-Gx builtins
+  namespace Tile {
+    enum {
+        LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
+#define BUILTIN(ID, TYPE, ATTRS) BI##ID,
+#include "clang/Basic/BuiltinsTile.def"
+        LastTSBuiltin
+    };
+  }
+
   /// SystemZ builtins
   namespace SystemZ {
   enum {
