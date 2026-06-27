@@ -16,6 +16,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/TileBaseInfo.h"
 #include "MCTargetDesc/TileFixupKinds.h"
 #include "MCTargetDesc/TileMCTargetDesc.h"
 #include "llvm/ADT/SmallVector.h"
@@ -92,10 +93,37 @@ TileMCCodeEmitter::getMachineOpValue(const MCInst &MI, const MCOperand &MO,
   if (MO.isImm())
     return static_cast<unsigned>(MO.getImm());
 
-  // Symbol-relative immediates require the hw0/hw1/got/tls relocation
-  // specifiers, which are deferred to the relocation phase.
-  report_fatal_error("Tile: symbol-relative operand encoding not yet "
-                     "implemented");
+  assert(MO.isExpr() && "unexpected operand kind");
+  const MCExpr *Expr = MO.getExpr();
+
+  // A halfword-extraction relocation specifier (hw0/hw1/hw2_last) drives the
+  // moveli/shl16insli address sequence. moveli and shl16insli are X1-pipe in
+  // the unpacketized bundle, so every such operand records an X1 fixup; the
+  // value bits stay zero and the linker patches them through the recorded
+  // relocation.
+  if (const auto *SE = dyn_cast<MCSpecifierExpr>(Expr)) {
+    Tile::Fixups Kind;
+    switch (SE->getSpecifier()) {
+    default:
+      report_fatal_error("Tile: unsupported relocation specifier");
+    case TileII::MO_HW0:
+      Kind = Tile::fixup_Tile_X1_HW0;
+      break;
+    case TileII::MO_HW1:
+      Kind = Tile::fixup_Tile_X1_HW1;
+      break;
+    case TileII::MO_HW1_LAST:
+      Kind = Tile::fixup_Tile_X1_HW1_LAST;
+      break;
+    case TileII::MO_HW2_LAST:
+      Kind = Tile::fixup_Tile_X1_HW2_LAST;
+      break;
+    }
+    Fixups.push_back(MCFixup::create(0, Expr, MCFixupKind(Kind)));
+    return 0;
+  }
+
+  report_fatal_error("Tile: unsupported symbol-relative operand");
 }
 
 unsigned

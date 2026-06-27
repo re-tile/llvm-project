@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Tile.h"
+#include "MCTargetDesc/TileBaseInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineOperand.h"
@@ -32,6 +33,15 @@ static MCOperand lowerSymbolOperand(const MachineOperand &MO,
   if (!MO.isJTI() && !MO.isMBB() && MO.getOffset())
     Expr = MCBinaryExpr::createAdd(
         Expr, MCConstantExpr::create(MO.getOffset(), Ctx), Ctx);
+
+  // The hw0/hw1/hw2_last (and GOT/TLS) halfword-extraction relocation specifier
+  // rides on the machine-operand target flag. The TileII::TOF value is used
+  // directly as the MCSpecifierExpr code and decoded by the code emitter and
+  // the asm printer.
+  unsigned Flag = MO.getTargetFlags();
+  if (Flag != TileII::MO_NO_FLAG)
+    Expr = MCSpecifierExpr::create(Expr, Flag, Ctx);
+
   return MCOperand::createExpr(Expr);
 }
 

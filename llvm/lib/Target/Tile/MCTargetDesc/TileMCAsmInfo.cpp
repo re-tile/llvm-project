@@ -11,10 +11,41 @@
 //===----------------------------------------------------------------------===//
 
 #include "TileMCAsmInfo.h"
+#include "TileBaseInfo.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/TargetParser/Triple.h"
 
 using namespace llvm;
+
+StringRef Tile::getSpecifierName(uint16_t Spec) {
+  switch (Spec) {
+  case TileII::MO_HW0:
+    return "hw0";
+  case TileII::MO_HW1:
+    return "hw1";
+  case TileII::MO_HW1_LAST:
+    return "hw1_last";
+  case TileII::MO_HW2_LAST:
+    return "hw2_last";
+  case TileII::MO_HW0_GOT:
+    return "hw0_got";
+  case TileII::MO_HW1_LAST_GOT:
+    return "hw1_last_got";
+  default:
+    return StringRef();
+  }
+}
+
+void TileMCAsmInfo::printSpecifierExpr(raw_ostream &OS,
+                                       const MCSpecifierExpr &Expr) const {
+  StringRef S = Tile::getSpecifierName(Expr.getSpecifier());
+  if (!S.empty())
+    OS << S << '(';
+  printExpr(OS, *Expr.getSubExpr());
+  if (!S.empty())
+    OS << ')';
+}
 
 void TileMCAsmInfo::anchor() {}
 
@@ -23,7 +54,6 @@ TileMCAsmInfo::TileMCAsmInfo(const Triple &TheTriple,
     : MCAsmInfoELF(Options) {
   IsLittleEndian = true;
   CodePointerSize = CalleeSaveStackSlotSize = 8;
-  // Instruction bundles are 8 bytes; this is the DWARF CFI code-alignment.
   MinInstAlignment = 8;
 
   Data16bitsDirective = "\t.2byte\t";
@@ -32,7 +62,6 @@ TileMCAsmInfo::TileMCAsmInfo(const Triple &TheTriple,
   ZeroDirective = "\t.space\t";
   CommentString = "#";
 
-  // The tilegx assembler has no .bss directive; emit BSS via .section.
   UsesELFSectionDirectiveForBSS = true;
 
   SupportsDebugInformation = true;

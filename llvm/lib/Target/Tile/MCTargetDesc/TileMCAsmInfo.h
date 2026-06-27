@@ -15,10 +15,14 @@
 
 #include "llvm/MC/MCAsmInfoELF.h"
 
+#include "llvm/ADT/StringRef.h"
+
 namespace llvm {
 
 class Triple;
 class MCTargetOptions;
+class MCSpecifierExpr;
+class raw_ostream;
 
 class TileMCAsmInfo : public MCAsmInfoELF {
   void anchor() override;
@@ -26,7 +30,16 @@ class TileMCAsmInfo : public MCAsmInfoELF {
 public:
   explicit TileMCAsmInfo(const Triple &TheTriple,
                          const MCTargetOptions &Options);
+
+  void printSpecifierExpr(raw_ostream &OS,
+                          const MCSpecifierExpr &Expr) const override;
 };
+
+namespace Tile {
+// The relocation-specifier name (hw0/hw1/hw2_last/...) as accepted by the GNU
+// tilegx assembler. The specifier code is a TileII::TOF machine-operand flag.
+StringRef getSpecifierName(uint16_t Spec);
+} // namespace Tile
 
 } // namespace llvm
 

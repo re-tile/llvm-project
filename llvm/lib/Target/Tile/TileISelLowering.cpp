@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TileISelLowering.h"
+#include "MCTargetDesc/TileBaseInfo.h"
 #include "TileCallingConv.h"
 #include "TileMachineFunction.h"
 #include "TileSubtarget.h"
@@ -129,6 +130,9 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i16, Expand);
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i32, Expand);
 
+  // Addresses are materialized with the moveli/shl16insli halfword sequence.
+  setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
+
   setTargetDAGCombine(ISD::SELECT);
   setTargetDAGCombine(ISD::ZERO_EXTEND);
 
@@ -139,22 +143,38 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
 
 const char *TileTargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
-  case TileISD::TLSGD:        return "TileISD::TLSGD";
-  case TileISD::LDTLS:        return "TileISD::LDTLS";
-  case TileISD::TLSRELAXADD0: return "TileISD::TLSRELAXADD0";
-  case TileISD::TLSRELAXADD1: return "TileISD::TLSRELAXADD1";
-  case TileISD::MOVE:         return "TileISD::MOVE";
-  case TileISD::SAR16:        return "TileISD::SAR16";
-  case TileISD::JmpLink:      return "TileISD::JmpLink";
-  case TileISD::Ret:          return "TileISD::Ret";
-  case TileISD::MF:           return "TileISD::MF";
-  case TileISD::BFINS:        return "TileISD::BFINS";
-  case TileISD::BFEXTU:       return "TileISD::BFEXTU";
-  case TileISD::BRINDJT:      return "TileISD::BRINDJT";
-  case TileISD::VAARG_SP:     return "TileISD::VAARG_SP";
-  case TileISD::ALLOCA_SP:    return "TileISD::ALLOCA_SP";
-  case TileISD::ALLOCA_ADDR:  return "TileISD::ALLOCA_ADDR";
-  default:                    return nullptr;
+  case TileISD::TLSGD:
+    return "TileISD::TLSGD";
+  case TileISD::LDTLS:
+    return "TileISD::LDTLS";
+  case TileISD::TLSRELAXADD0:
+    return "TileISD::TLSRELAXADD0";
+  case TileISD::TLSRELAXADD1:
+    return "TileISD::TLSRELAXADD1";
+  case TileISD::MOVE:
+    return "TileISD::MOVE";
+  case TileISD::SAR16:
+    return "TileISD::SAR16";
+  case TileISD::JmpLink:
+    return "TileISD::JmpLink";
+  case TileISD::Ret:
+    return "TileISD::Ret";
+  case TileISD::MF:
+    return "TileISD::MF";
+  case TileISD::BFINS:
+    return "TileISD::BFINS";
+  case TileISD::BFEXTU:
+    return "TileISD::BFEXTU";
+  case TileISD::BRINDJT:
+    return "TileISD::BRINDJT";
+  case TileISD::VAARG_SP:
+    return "TileISD::VAARG_SP";
+  case TileISD::ALLOCA_SP:
+    return "TileISD::ALLOCA_SP";
+  case TileISD::ALLOCA_ADDR:
+    return "TileISD::ALLOCA_ADDR";
+  default:
+    return nullptr;
   }
 }
 
@@ -178,7 +198,31 @@ bool TileTargetLowering::isShuffleMaskLegal(ArrayRef<int> M, EVT VT) const {
   return false;
 }
 
-SDValue TileTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
+SDValue TileTargetLowering::lowerGlobalAddress(SDValue Op,
+                                               SelectionDAG &DAG) const {
+  const GlobalAddressSDNode *GA = cast<GlobalAddressSDNode>(Op);
+  SDLoc DL(Op);
+  const GlobalValue *GV = GA->getGlobal();
+  int64_t Offset = GA->getOffset();
+
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
+    report_fatal_error("Tile: PIC global address lowering not yet supported");
+
+  // Absolute 64-bit address: moveli hw2_last, shl16insli hw1, shl16insli hw0.
+  SDValue High =
+      DAG.getTargetGlobalAddress(GV, DL, MVT::i64, Offset, TileII::MO_HW2_LAST);
+  SDValue Middle =
+      DAG.getTargetGlobalAddress(GV, DL, MVT::i64, Offset, TileII::MO_HW1);
+  SDValue Low =
+      DAG.getTargetGlobalAddress(GV, DL, MVT::i64, Offset, TileII::MO_HW0);
+
+  SDValue Addr = DAG.getNode(TileISD::MOVE, DL, MVT::i64, High);
+  Addr = DAG.getNode(TileISD::SAR16, DL, MVT::i64, Addr, Middle);
+  return DAG.getNode(TileISD::SAR16, DL, MVT::i64, Addr, Low);
+}
+
+SDValue TileTargetLowering::LowerOperation(SDValue Op,
+                                           SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
   case ISD::BRCOND:
   case ISD::SELECT:
@@ -187,6 +231,8 @@ SDValue TileTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const 
   case ISD::MUL:
     // Expanded into a multiply-add sequence during DAG-to-DAG selection.
     return Op;
+  case ISD::GlobalAddress:
+    return lowerGlobalAddress(Op, DAG);
   }
   return SDValue();
 }
@@ -343,11 +389,12 @@ SDValue TileTargetLowering::LowerCallResult(
   report_fatal_error("Tile: call results not yet supported");
 }
 
-SDValue TileTargetLowering::LowerReturn(
-    SDValue Chain, CallingConv::ID CallConv, bool IsVarArg,
-    const SmallVectorImpl<ISD::OutputArg> &Outs,
-    const SmallVectorImpl<SDValue> &OutVals, const SDLoc &dl,
-    SelectionDAG &DAG) const {
+SDValue
+TileTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
+                                bool IsVarArg,
+                                const SmallVectorImpl<ISD::OutputArg> &Outs,
+                                const SmallVectorImpl<SDValue> &OutVals,
+                                const SDLoc &dl, SelectionDAG &DAG) const {
   SmallVector<CCValAssign, 16> RVLocs;
   CCState CCInfo(CallConv, IsVarArg, DAG.getMachineFunction(), RVLocs,
                  *DAG.getContext());

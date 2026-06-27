@@ -77,6 +77,8 @@ public:
 private:
   const TileSubtarget &Subtarget;
 
+  SDValue lowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
+
   SDValue LowerCallResult(SDValue Chain, SDValue InGlue,
                           CallingConv::ID CallConv, bool isVarArg,
                           const SmallVectorImpl<ISD::InputArg> &Ins,
