@@ -86,6 +86,9 @@ private:
   SDValue lowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerRETURNADDR(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerConstantPool(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerFABS(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
 
   void passByValArg(SDValue Chain, const SDLoc &dl,
                     SmallVectorImpl<std::pair<unsigned, SDValue>> &RegsToPass,

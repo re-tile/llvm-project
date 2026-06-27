@@ -70,6 +70,95 @@ bool TileDAGToDAGISel::SelectFI(SDValue N, SDValue &R1) {
   return false;
 }
 
+// f32 add/sub/mul: build the fsingle helper sequence GCC emits for addsf3/
+// subsf3/mulsf3. add/sub share fsingle_addsub2 to combine the partial result
+// with the operands; mul threads fsingle_mul2 through the second operand.
+static SDNode *selectSingleFloatBinOp(SelectionDAG *DAG, SDNode *N) {
+  SDLoc DL(N);
+  unsigned Opc = N->getOpcode();
+  SDValue A = N->getOperand(0);
+  SDValue B = N->getOperand(1);
+  unsigned Part1, Part2 = Tile::FSINGLE_ADDSUB2;
+  switch (Opc) {
+  case ISD::FADD:
+    Part1 = Tile::FSINGLE_ADD1;
+    break;
+  case ISD::FSUB:
+    Part1 = Tile::FSINGLE_SUB1;
+    break;
+  case ISD::FMUL:
+    Part1 = Tile::FSINGLE_MUL1;
+    Part2 = Tile::FSINGLE_MUL2;
+    break;
+  default:
+    llvm_unreachable("selectSingleFloatBinOp: unexpected opcode");
+  }
+  SDNode *T0 = DAG->getMachineNode(Part1, DL, MVT::f32, A, B);
+  SDNode *T1;
+  if (Opc == ISD::FMUL)
+    T1 = DAG->getMachineNode(Part2, DL, MVT::f32, SDValue(T0, 0), B);
+  else
+    T1 = DAG->getMachineNode(Part2, DL, MVT::f32, A, B, SDValue(T0, 0));
+  SDValue T1V(T1, 0);
+  SDNode *Flag = DAG->getMachineNode(Tile::FSINGLE_PACK1, DL, MVT::f32, T1V);
+  return DAG->getMachineNode(Tile::FSINGLE_PACK2, DL, MVT::f32, T1V,
+                             SDValue(Flag, 0));
+}
+
+// f64 add/sub: the fdouble helper sequence GCC emits for adddf3/subdf3.
+static SDNode *selectDoubleFloatAddSub(SelectionDAG *DAG, SDNode *N) {
+  SDLoc DL(N);
+  SDValue A = N->getOperand(0);
+  SDValue B = N->getOperand(1);
+  unsigned FlagOpc = (N->getOpcode() == ISD::FSUB) ? Tile::FDOUBLE_SUB_FLAGS
+                                                   : Tile::FDOUBLE_ADD_FLAGS;
+  SDValue Zero = DAG->getRegister(Tile::ZERO, MVT::f64);
+  SDNode *Min = DAG->getMachineNode(Tile::FDOUBLE_UNPACK_MIN, DL, MVT::f64, A, B);
+  SDNode *Max = DAG->getMachineNode(Tile::FDOUBLE_UNPACK_MAX, DL, MVT::f64, A, B);
+  SDNode *Flag = DAG->getMachineNode(FlagOpc, DL, MVT::f64, A, B);
+  SDValue FlagV(Flag, 0);
+  SDNode *Mid = DAG->getMachineNode(Tile::FDOUBLE_ADDSUB, DL, MVT::f64,
+                                    SDValue(Min, 0), FlagV, SDValue(Max, 0));
+  SDValue MidV(Mid, 0);
+  SDNode *Res =
+      DAG->getMachineNode(Tile::FDOUBLE_PACK1, DL, MVT::f64, MidV, FlagV);
+  return DAG->getMachineNode(Tile::FDOUBLE_PACK2, DL, MVT::f64, MidV, Zero,
+                             SDValue(Res, 0));
+}
+
+// f64 mul: the long fdouble/integer-partial-product sequence GCC emits for
+// muldf3. Both operands are unpacked against zero, the 64x64 mantissa product
+// is assembled from the 32-bit partial products, and fdouble_pack1/2 reapply
+// the exponent and round.
+static SDNode *selectDoubleFloatMul(SelectionDAG *DAG, SDNode *N) {
+  SDLoc DL(N);
+  SDValue A = N->getOperand(0);
+  SDValue B = N->getOperand(1);
+  SDValue C32 = DAG->getTargetConstant(32, DL, MVT::i64);
+  SDValue Zero = DAG->getRegister(Tile::ZERO, MVT::f64);
+  SDValue UA(
+      DAG->getMachineNode(Tile::FDOUBLE_UNPACK_MAX, DL, MVT::f64, A, Zero), 0);
+  SDValue UB(
+      DAG->getMachineNode(Tile::FDOUBLE_UNPACK_MAX, DL, MVT::f64, B, Zero), 0);
+  SDValue Flag(
+      DAG->getMachineNode(Tile::FDOUBLE_MUL_FLAGS, DL, MVT::f64, A, B), 0);
+  SDValue Low(DAG->getMachineNode(Tile::MUL_LU_LU, DL, MVT::i64, UA, UB), 0);
+  SDValue Mid0(DAG->getMachineNode(Tile::MUL_HU_LU, DL, MVT::i64, UA, UB), 0);
+  SDValue Mid(DAG->getMachineNode(Tile::MULA_HU_LU, DL, MVT::i64, Mid0, UB, UA),
+              0);
+  SDValue High0(DAG->getMachineNode(Tile::MUL_HU_HU, DL, MVT::i64, UA, UB), 0);
+  SDValue MidL(DAG->getMachineNode(Tile::SHLI, DL, MVT::i64, Mid, C32), 0);
+  SDValue MidR(DAG->getMachineNode(Tile::SHRUI, DL, MVT::i64, Mid, C32), 0);
+  SDValue High1(DAG->getMachineNode(Tile::ADD, DL, MVT::i64, High0, MidR), 0);
+  SDValue LowB(DAG->getMachineNode(Tile::ADD, DL, MVT::i64, Low, MidL), 0);
+  SDValue Carry(DAG->getMachineNode(Tile::CMPLTU, DL, MVT::i64, LowB, MidL), 0);
+  SDValue HighB(DAG->getMachineNode(Tile::ADD, DL, MVT::i64, High1, Carry), 0);
+  SDValue Res(
+      DAG->getMachineNode(Tile::FDOUBLE_PACK1, DL, MVT::f64, HighB, Flag), 0);
+  return DAG->getMachineNode(Tile::FDOUBLE_PACK2, DL, MVT::f64, HighB, LowB,
+                             Res);
+}
+
 void TileDAGToDAGISel::Select(SDNode *Node) {
   if (Node->isMachineOpcode()) {
     Node->setNodeId(-1);
@@ -81,6 +170,22 @@ void TileDAGToDAGISel::Select(SDNode *Node) {
   switch (Node->getOpcode()) {
   default:
     break;
+  case ISD::FADD:
+  case ISD::FSUB:
+  case ISD::FMUL: {
+    EVT VT = Node->getValueType(0);
+    if (VT == MVT::f32) {
+      ReplaceNode(Node, selectSingleFloatBinOp(CurDAG, Node));
+      return;
+    }
+    if (VT == MVT::f64) {
+      ReplaceNode(Node, Node->getOpcode() == ISD::FMUL
+                            ? selectDoubleFloatMul(CurDAG, Node)
+                            : selectDoubleFloatAddSub(CurDAG, Node));
+      return;
+    }
+    break;
+  }
   case ISD::MUL: {
     // TILE-Gx lacks a single 64-bit multiply. Build the product from the
     // 32x32 partial products: low*low, plus (high*low + low*high) << 32,

@@ -76,6 +76,14 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   addRegisterClass(MVT::i64, &Tile::CPURegsRegClass);
   addRegisterClass(MVT::i32, &Tile::CPU32RegsRegClass);
 
+  // TILE-Gx has no dedicated float register file; float and double values live
+  // in the general registers and the few fp helper instructions assist a short
+  // software sequence. Reuse the integer register classes for f32/f64 so the
+  // fsingle/fdouble helper opcodes (lowered in DAGToDAG) and the soft-float
+  // libcalls both operate on them.
+  addRegisterClass(MVT::f32, &Tile::CPU32RegsRegClass);
+  addRegisterClass(MVT::f64, &Tile::CPURegsRegClass);
+
   setStackPointerRegisterToSaveRestore(Tile::SP);
 
   // i1 loads always widen to a full register.
@@ -133,6 +141,7 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   // Addresses are materialized with the moveli/shl16insli halfword sequence.
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::JumpTable, MVT::i64, Custom);
+  setOperationAction(ISD::ConstantPool, MVT::i64, Custom);
   setOperationAction(ISD::BR_JT, MVT::Other, Custom);
 
   // va_list is a two-pointer struct {next_arg, sp_at_entry}; the reserved
@@ -148,6 +157,78 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::FRAMEADDR, MVT::i64, Custom);
   setOperationAction(ISD::RETURNADDR, MVT::i64, Custom);
+
+  // Floating point.
+  //
+  // TILE-Gx mirrors GCC-12: FADD/FSUB/FMUL on f32 and f64 are expanded inline
+  // during selection into the fsingle/fdouble helper instruction sequences, and
+  // the float compares are matched by the .td cmp pseudos and finished in
+  // TileExpandPseudo. Everything else (division, square root, conversions to and
+  // from integer, the float<->double widen/narrow, remainder and the
+  // transcendentals) has no md pattern in GCC and is left to the soft-float
+  // libcalls, whose names come from the default libgcc set already wired in
+  // RuntimeLibcalls.td. The result links against the MDE libgcc/libm runtime.
+  for (MVT VT : {MVT::f32, MVT::f64}) {
+    setOperationAction(ISD::FDIV, VT, Expand);
+    setOperationAction(ISD::FREM, VT, Expand);
+    setOperationAction(ISD::FSQRT, VT, Expand);
+    setOperationAction(ISD::FMA, VT, Expand);
+    setOperationAction(ISD::FNEG, VT, Expand);
+    setOperationAction(ISD::FSIN, VT, Expand);
+    setOperationAction(ISD::FCOS, VT, Expand);
+    setOperationAction(ISD::FSINCOS, VT, Expand);
+    setOperationAction(ISD::FPOW, VT, Expand);
+    setOperationAction(ISD::FPOWI, VT, Expand);
+    setOperationAction(ISD::FLOG, VT, Expand);
+    setOperationAction(ISD::FLOG2, VT, Expand);
+    setOperationAction(ISD::FLOG10, VT, Expand);
+    setOperationAction(ISD::FEXP, VT, Expand);
+    setOperationAction(ISD::FEXP2, VT, Expand);
+    setOperationAction(ISD::FCEIL, VT, Expand);
+    setOperationAction(ISD::FTRUNC, VT, Expand);
+    setOperationAction(ISD::FRINT, VT, Expand);
+    setOperationAction(ISD::FNEARBYINT, VT, Expand);
+    setOperationAction(ISD::FROUND, VT, Expand);
+    setOperationAction(ISD::FROUNDEVEN, VT, Expand);
+    setOperationAction(ISD::FFLOOR, VT, Expand);
+    setOperationAction(ISD::FMINNUM, VT, Expand);
+    setOperationAction(ISD::FMAXNUM, VT, Expand);
+    setOperationAction(ISD::BR_CC, VT, Expand);
+    setOperationAction(ISD::SELECT_CC, VT, Expand);
+    // There is no fp immediate form, and the getNode bitcast-of-constant fold
+    // would undo an inline integer materialization, so float literals go to the
+    // constant pool (matching GCC-12 and the 3.3 fork).
+    setOperationAction(ISD::ConstantFP, VT, Expand);
+    // Sign manipulation is a couple of bitfield ops on the integer view.
+    setOperationAction(ISD::FABS, VT, Custom);
+    setOperationAction(ISD::FCOPYSIGN, VT, Custom);
+  }
+
+  // Integer <-> floating point conversions and the float/double widen and
+  // narrow are soft-float libcalls (no GCC md pattern). With f32/f64 legal the
+  // generic legalizer turns these Expand actions into the right libcall.
+  for (MVT IntVT : {MVT::i32, MVT::i64}) {
+    setOperationAction(ISD::SINT_TO_FP, IntVT, Expand);
+    setOperationAction(ISD::UINT_TO_FP, IntVT, Expand);
+    setOperationAction(ISD::FP_TO_SINT, IntVT, Expand);
+    setOperationAction(ISD::FP_TO_UINT, IntVT, Expand);
+  }
+  setOperationAction(ISD::FP_EXTEND, MVT::f64, Expand);
+  setOperationAction(ISD::FP_ROUND, MVT::f32, Expand);
+  setLoadExtAction(ISD::EXTLOAD, MVT::f64, MVT::f32, Expand);
+  setTruncStoreAction(MVT::f64, MVT::f32, Expand);
+
+  // The fp compare helpers compute the ordered result and the unordered flag in
+  // one shot, so the unordered predicates are cheap but the ordered ones are
+  // simpler to synthesize as SETO combined with the matching unordered compare.
+  for (MVT VT : {MVT::f32, MVT::f64}) {
+    setCondCodeAction(ISD::SETOEQ, VT, Expand);
+    setCondCodeAction(ISD::SETONE, VT, Expand);
+    setCondCodeAction(ISD::SETOLT, VT, Expand);
+    setCondCodeAction(ISD::SETOLE, VT, Expand);
+    setCondCodeAction(ISD::SETOGT, VT, Expand);
+    setCondCodeAction(ISD::SETOGE, VT, Expand);
+  }
 
   setTargetDAGCombine(ISD::SELECT);
   setTargetDAGCombine(ISD::ZERO_EXTEND);
@@ -308,8 +389,62 @@ SDValue TileTargetLowering::LowerOperation(SDValue Op,
     return lowerFRAMEADDR(Op, DAG);
   case ISD::RETURNADDR:
     return lowerRETURNADDR(Op, DAG);
+  case ISD::ConstantPool:
+    return lowerConstantPool(Op, DAG);
+  case ISD::FABS:
+    return lowerFABS(Op, DAG);
+  case ISD::FCOPYSIGN:
+    return lowerFCOPYSIGN(Op, DAG);
   }
   return SDValue();
+}
+
+SDValue TileTargetLowering::lowerConstantPool(SDValue Op,
+                                              SelectionDAG &DAG) const {
+  const ConstantPoolSDNode *CP = cast<ConstantPoolSDNode>(Op);
+  SDLoc DL(Op);
+  EVT PtrVT = Op.getValueType();
+
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
+    report_fatal_error("Tile: PIC constant pool lowering not yet supported");
+
+  // Absolute 64-bit address of the pool entry: moveli hw2_last, shl16insli hw1,
+  // shl16insli hw0, same materialization as a global address.
+  auto Entry = [&](unsigned Flag) {
+    return DAG.getTargetConstantPool(CP->getConstVal(), PtrVT, CP->getAlign(),
+                                     CP->getOffset(), Flag);
+  };
+  SDValue Addr = DAG.getNode(TileISD::MOVE, DL, PtrVT, Entry(TileII::MO_HW2_LAST));
+  Addr = DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Entry(TileII::MO_HW1));
+  return DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Entry(TileII::MO_HW0));
+}
+
+SDValue TileTargetLowering::lowerFABS(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+  EVT IntVT = (VT == MVT::f64) ? MVT::i64 : MVT::i32;
+  // Clear the sign bit: keep bits [0 .. width-2] via an unsigned bitfield
+  // extract on the integer view.
+  SDValue X = DAG.getNode(ISD::BITCAST, DL, IntVT, Op.getOperand(0));
+  SDValue Start = DAG.getConstant(0, DL, IntVT);
+  SDValue End = DAG.getConstant(VT == MVT::f64 ? 62 : 30, DL, IntVT);
+  SDValue Res = DAG.getNode(TileISD::BFEXTU, DL, IntVT, X, Start, End);
+  return DAG.getNode(ISD::BITCAST, DL, VT, Res);
+}
+
+SDValue TileTargetLowering::lowerFCOPYSIGN(SDValue Op,
+                                           SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+  EVT IntVT = (VT == MVT::f64) ? MVT::i64 : MVT::i32;
+  uint64_t SignPos = (VT == MVT::f64) ? 63 : 31;
+  SDValue X = DAG.getNode(ISD::BITCAST, DL, IntVT, Op.getOperand(0));
+  SDValue Y = DAG.getNode(ISD::BITCAST, DL, IntVT, Op.getOperand(1));
+  SDValue Pos = DAG.getConstant(SignPos, DL, IntVT);
+  // Extract the sign bit from Y and insert it into the sign position of X.
+  SDValue Sign = DAG.getNode(TileISD::BFEXTU, DL, IntVT, Y, Pos, Pos);
+  SDValue Ins = DAG.getNode(TileISD::BFINS, DL, IntVT, Sign, Pos, Pos, X);
+  return DAG.getNode(ISD::BITCAST, DL, VT, Ins);
 }
 
 SDValue TileTargetLowering::lowerVASTART(SDValue Op, SelectionDAG &DAG) const {
