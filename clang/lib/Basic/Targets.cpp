@@ -35,6 +35,7 @@
 #include "Targets/Sparc.h"
 #include "Targets/SystemZ.h"
 #include "Targets/TCE.h"
+#include "Targets/Tile.h"
 #include "Targets/VE.h"
 #include "Targets/WebAssembly.h"
 #include "Targets/X86.h"
@@ -570,6 +571,14 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
 
   case llvm::Triple::tcele64:
     return std::make_unique<TCELE64TargetInfo>(Triple, Opts);
+
+  case llvm::Triple::tilegx:
+    switch (os) {
+    case llvm::Triple::Linux:
+      return std::make_unique<LinuxTargetInfo<TileGXTargetInfo>>(Triple, Opts);
+    default:
+      return std::make_unique<TileGXTargetInfo>(Triple, Opts);
+    }
 
   case llvm::Triple::x86:
     if (Triple.isOSDarwin())
