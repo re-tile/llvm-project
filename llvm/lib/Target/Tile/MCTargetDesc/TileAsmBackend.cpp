@@ -66,9 +66,10 @@ public:
     if (!Value)
       return;
 
-    unsigned Offset = Fixup.getOffset();
+    // Data already points at the fixup location, so the packed bits are merged
+    // into the eight bytes of this bundle directly.
     for (unsigned I = 0; I != 8; ++I)
-      Data[Offset + I] |= uint8_t((Value >> (I * 8)) & 0xff);
+      Data[I] |= uint8_t((Value >> (I * 8)) & 0xff);
   }
 
   std::unique_ptr<MCObjectTargetWriter>
