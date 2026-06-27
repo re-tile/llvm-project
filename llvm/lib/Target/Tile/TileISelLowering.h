@@ -80,6 +80,19 @@ private:
   SDValue lowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerJumpTable(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerBR_JT(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerVASTART(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerVAARG(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerVACOPY(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerRETURNADDR(SDValue Op, SelectionDAG &DAG) const;
+
+  void passByValArg(SDValue Chain, const SDLoc &dl,
+                    SmallVectorImpl<std::pair<unsigned, SDValue>> &RegsToPass,
+                    SmallVectorImpl<SDValue> &MemOpChains, SDValue StackPtr,
+                    MachineFrameInfo &MFI, SelectionDAG &DAG, SDValue Arg,
+                    const CCValAssign &VA,
+                    const ISD::ArgFlagsTy &Flags) const;
 
   SDValue LowerCallResult(SDValue Chain, SDValue InGlue,
                           CallingConv::ID CallConv, bool isVarArg,
