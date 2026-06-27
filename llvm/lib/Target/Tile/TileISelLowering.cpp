@@ -1043,9 +1043,6 @@ SDValue TileTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   CallingConv::ID CallConv = CLI.CallConv;
   bool IsVarArg = CLI.IsVarArg;
 
-  // Tail-call optimization is not implemented yet.
-  CLI.IsTailCall = false;
-
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo &MFI = MF.getFrameInfo();
   EVT PtrVT = getPointerTy(DAG.getDataLayout());
@@ -1057,7 +1054,16 @@ SDValue TileTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
   unsigned NextStackOffset = CCInfo.getStackSize();
 
-  SDValue Chain = DAG.getCALLSEQ_START(InChain, NextStackOffset, 0, dl);
+  bool IsTailCall = CLI.IsTailCall &&
+                    isEligibleForTailCallOptimization(CCInfo, NextStackOffset,
+                                                      CLI, MF);
+  CLI.IsTailCall = IsTailCall;
+
+  // A sibling call needs no argument area of its own and is not bracketed by a
+  // call-frame sequence; the existing frame is torn down by the epilogue.
+  SDValue Chain = InChain;
+  if (!IsTailCall)
+    Chain = DAG.getCALLSEQ_START(InChain, NextStackOffset, 0, dl);
   SDValue StackPtr = DAG.getCopyFromReg(Chain, dl, Tile::SP, PtrVT);
 
   SmallVector<std::pair<unsigned, SDValue>, TILEGX_AREG_NUM> RegsToPass;
@@ -1155,6 +1161,11 @@ SDValue TileTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   if (InFlag.getNode())
     Ops.push_back(InFlag);
 
+  if (IsTailCall) {
+    MFI.setHasTailCall();
+    return DAG.getNode(TileISD::TailCall, dl, MVT::Other, Ops);
+  }
+
   Chain = DAG.getNode(TileISD::JmpLink, dl, NodeTys, Ops);
   InFlag = Chain.getValue(1);
 
@@ -1163,6 +1174,30 @@ SDValue TileTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
   return LowerCallResult(Chain, InFlag, CallConv, IsVarArg, Ins, dl, DAG,
                          InVals);
+}
+
+bool TileTargetLowering::isEligibleForTailCallOptimization(
+    const CCState &CCInfo, unsigned NextStackOffset, const CallLoweringInfo &CLI,
+    const MachineFunction &MF) const {
+  // Be conservative: only direct sibling calls with every argument in a
+  // register, matching the C convention on both sides, and no special argument
+  // shapes. Anything else falls back to a normal jal.
+  if (CLI.IsVarArg || NextStackOffset != 0)
+    return false;
+  if (CLI.CallConv != CallingConv::C ||
+      MF.getFunction().getCallingConv() != CallingConv::C)
+    return false;
+  if (MF.getFunction().hasStructRetAttr())
+    return false;
+  // An indirect callee would have to survive the epilogue in a caller-saved
+  // register; restrict to symbol callees for now.
+  if (!isa<GlobalAddressSDNode>(CLI.Callee) &&
+      !isa<ExternalSymbolSDNode>(CLI.Callee))
+    return false;
+  for (const ISD::OutputArg &Out : CLI.Outs)
+    if (Out.Flags.isByVal())
+      return false;
+  return true;
 }
 
 SDValue TileTargetLowering::LowerCallResult(

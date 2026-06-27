@@ -32,6 +32,7 @@ enum NodeType {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
 
   JmpLink,
+  TailCall,
   SAR16,
   TLSRELAXADD0,
   TLSRELAXADD1,
@@ -113,6 +114,11 @@ private:
 
   SDValue LowerCall(TargetLowering::CallLoweringInfo &CLI,
                     SmallVectorImpl<SDValue> &InVals) const override;
+
+  bool isEligibleForTailCallOptimization(const CCState &CCInfo,
+                                         unsigned NextStackOffset,
+                                         const CallLoweringInfo &CLI,
+                                         const MachineFunction &MF) const;
 
   SDValue LowerReturn(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
                       const SmallVectorImpl<ISD::OutputArg> &Outs,

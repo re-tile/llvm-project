@@ -70,6 +70,9 @@ def TileJmpLink : SDNode<"TileISD::JmpLink",SDT_TileJmpLink,
                          [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue,
                           SDNPVariadic]>;
 
+def TileTailCall : SDNode<"TileISD::TailCall", SDT_TileJmpLink,
+                          [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
+
 // TLS
 def TileTLSGD
     : SDNode<"TileISD::TLSGD", SDTIntBinOp>;
@@ -3901,6 +3904,22 @@ multiclass TileJALR {
          IIC_CTL, FrmUnary, S_X1>;
 }
 
+
+// A sibling call: the frame is torn down by the epilogue (this is a return)
+// and control transfers with a plain jump that leaves lr untouched, so the
+// callee returns straight to our caller. j carries the same JUMPOFF
+// relocation as jal, so a direct tail call is byte-identical to tile-gcc.
+let isTerminator = 1, isReturn = 1, isBarrier = 1, isCodeGenOnly = 1,
+    Uses = [SP] in
+def TAILCALL : TileInstX1Jump
+    <0x4, 0x1,
+     (outs), (ins calltarget:$j_target, variable_ops),
+     "j\t$j_target",
+     [],
+     IIC_CTL, FrmJmp, S_X1>;
+
+def : Pat<(TileTailCall (iPTR tglobaladdr:$dst)), (TAILCALL tglobaladdr:$dst)>;
+def : Pat<(TileTailCall (iPTR texternalsym:$dst)), (TAILCALL texternalsym:$dst)>;
 
 let isBranch=1, isTerminator=1, isBarrier=1,
     isIndirectBranch = 1, isCodeGenOnly = 1 in
