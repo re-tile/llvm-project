@@ -140,6 +140,7 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
 
   // Addresses are materialized with the moveli/shl16insli halfword sequence.
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
+  setOperationAction(ISD::GlobalTLSAddress, MVT::i64, Custom);
   setOperationAction(ISD::JumpTable, MVT::i64, Custom);
   setOperationAction(ISD::ConstantPool, MVT::i64, Custom);
   setOperationAction(ISD::BR_JT, MVT::Other, Custom);
@@ -297,6 +298,13 @@ bool TileTargetLowering::isShuffleMaskLegal(ArrayRef<int> M, EVT VT) const {
   return false;
 }
 
+// getGlobalBaseReg pins r51 and marks the function so the AsmPrinter emits the
+// PIC header that loads the GOT base into it.
+SDValue TileTargetLowering::getGlobalBaseReg(SelectionDAG &DAG) const {
+  TileFunctionInfo *FI = DAG.getMachineFunction().getInfo<TileFunctionInfo>();
+  return DAG.getRegister(FI->getGlobalBaseReg(), MVT::i64);
+}
+
 SDValue TileTargetLowering::lowerGlobalAddress(SDValue Op,
                                                SelectionDAG &DAG) const {
   const GlobalAddressSDNode *GA = cast<GlobalAddressSDNode>(Op);
@@ -304,8 +312,27 @@ SDValue TileTargetLowering::lowerGlobalAddress(SDValue Op,
   const GlobalValue *GV = GA->getGlobal();
   int64_t Offset = GA->getOffset();
 
-  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
-    report_fatal_error("Tile: PIC global address lowering not yet supported");
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
+    // GOT-relative: build the 32-bit GOT offset (moveli hw1_last_got,
+    // shl16insli hw0_got), add the GOT base, then load the entry to get the
+    // symbol address. Every symbol is routed through the GOT, which always
+    // links; GCC additionally short-circuits locals to a PC-relative form.
+    SDValue High =
+        DAG.getTargetGlobalAddress(GV, DL, MVT::i64, 0, TileII::MO_HW1_LAST_GOT);
+    SDValue Low =
+        DAG.getTargetGlobalAddress(GV, DL, MVT::i64, 0, TileII::MO_HW0_GOT);
+    SDValue Off = DAG.getNode(TileISD::MOVE, DL, MVT::i64, High);
+    Off = DAG.getNode(TileISD::SAR16, DL, MVT::i64, Off, Low);
+    SDValue Entry =
+        DAG.getNode(ISD::ADD, DL, MVT::i64, getGlobalBaseReg(DAG), Off);
+    SDValue Addr =
+        DAG.getLoad(MVT::i64, DL, DAG.getEntryNode(), Entry,
+                    MachinePointerInfo::getGOT(DAG.getMachineFunction()));
+    if (Offset != 0)
+      Addr = DAG.getNode(ISD::ADD, DL, MVT::i64, Addr,
+                         DAG.getConstant(Offset, DL, MVT::i64));
+    return Addr;
+  }
 
   // Absolute 64-bit address: moveli hw2_last, shl16insli hw1, shl16insli hw0.
   SDValue High =
@@ -320,13 +347,97 @@ SDValue TileTargetLowering::lowerGlobalAddress(SDValue Op,
   return DAG.getNode(TileISD::SAR16, DL, MVT::i64, Addr, Low);
 }
 
+SDValue TileTargetLowering::lowerGlobalTLSAddress(SDValue Op,
+                                                  SelectionDAG &DAG) const {
+  const GlobalAddressSDNode *GA = cast<GlobalAddressSDNode>(Op);
+  SDLoc DL(Op);
+  const GlobalValue *GV = GA->getGlobal();
+  EVT PtrVT = getPointerTy(DAG.getDataLayout());
+  TLSModel::Model Model = getTargetMachine().getTLSModel(GV);
+
+  if (Model == TLSModel::GeneralDynamic || Model == TLSModel::LocalDynamic) {
+    // moveli hw1_last_tls_gd / shl16insli hw0_tls_gd build the GOT offset of the
+    // tls_index pair; addi tls_add(sym) adds the GOT base; jal tls_gd_call(sym)
+    // invokes __tls_get_addr; addi tls_gd_add(sym) finalizes the result.
+    SDValue High =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_HW1_LAST_TLS_GD);
+    SDValue Low =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_HW0_TLS_GD);
+    SDValue TAdd =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_TLS_ADD);
+    SDValue TGdAdd =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_TLS_GD_ADD);
+
+    SDValue Arg = DAG.getNode(TileISD::MOVE, DL, PtrVT, High);
+    Arg = DAG.getNode(TileISD::TLSGD, DL, PtrVT, Arg, Low);
+    Arg = DAG.getNode(TileISD::TLSRELAXADD0, DL, PtrVT, getGlobalBaseReg(DAG),
+                      TAdd, Arg);
+
+    Type *PtrTy = PointerType::get(*DAG.getContext(), 0);
+    ArgListTy Args;
+    Args.emplace_back(Arg, PtrTy);
+
+    TargetLowering::CallLoweringInfo CLI(DAG);
+    CLI.setDebugLoc(DL)
+        .setChain(DAG.getEntryNode())
+        .setLibCallee(CallingConv::C, PtrTy, Op, std::move(Args));
+    std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+    return DAG.getNode(TileISD::TLSRELAXADD1, DL, PtrVT, CallResult.first,
+                       TGdAdd);
+  }
+
+  SDValue Result;
+  if (Model == TLSModel::InitialExec) {
+    // moveli hw1_last_tls_ie / shl16insli hw0_tls_ie build the GOT offset of the
+    // tpoff entry; addi tls_add adds the GOT base; ld_tls tls_ie_load loads the
+    // tpoff; add tp yields the address.
+    SDValue High =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_HW1_LAST_TLS_IE);
+    SDValue Low =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_HW0_TLS_IE);
+    SDValue TAdd =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_TLS_ADD);
+    SDValue TLoad =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_TLS_IE_LOAD);
+    Result = DAG.getNode(TileISD::MOVE, DL, PtrVT, High);
+    Result = DAG.getNode(TileISD::TLSGD, DL, PtrVT, Result, Low);
+    Result = DAG.getNode(TileISD::TLSRELAXADD0, DL, PtrVT, getGlobalBaseReg(DAG),
+                         TAdd, Result);
+    Result = DAG.getNode(TileISD::LDTLS, DL, PtrVT, Result, TLoad);
+  } else if (Model == TLSModel::LocalExec) {
+    // moveli hw1_last_tls_le / shl16insli hw0_tls_le build the tpoff directly;
+    // add tp yields the address. No GOT.
+    SDValue High =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_HW1_LAST_TLS_LE);
+    SDValue Low =
+        DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, TileII::MO_HW0_TLS_LE);
+    Result = DAG.getNode(TileISD::MOVE, DL, PtrVT, High);
+    Result = DAG.getNode(TileISD::TLSGD, DL, PtrVT, Result, Low);
+  } else {
+    report_fatal_error("Tile: unsupported TLS model");
+  }
+
+  return DAG.getNode(ISD::ADD, DL, PtrVT, Result,
+                     DAG.getRegister(Tile::TP, PtrVT));
+}
+
 SDValue TileTargetLowering::lowerJumpTable(SDValue Op, SelectionDAG &DAG) const {
   const JumpTableSDNode *JT = cast<JumpTableSDNode>(Op);
   SDLoc DL(Op);
   EVT PtrVT = Op.getValueType();
 
-  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
-    report_fatal_error("Tile: PIC jump table lowering not yet supported");
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
+    SDValue High =
+        DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW1_LAST_GOT);
+    SDValue Low =
+        DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW0_GOT);
+    SDValue Off = DAG.getNode(TileISD::MOVE, DL, PtrVT, High);
+    Off = DAG.getNode(TileISD::SAR16, DL, PtrVT, Off, Low);
+    SDValue Entry =
+        DAG.getNode(ISD::ADD, DL, PtrVT, getGlobalBaseReg(DAG), Off);
+    return DAG.getLoad(PtrVT, DL, DAG.getEntryNode(), Entry,
+                       MachinePointerInfo::getGOT(DAG.getMachineFunction()));
+  }
 
   SDValue High =
       DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW2_LAST);
@@ -373,6 +484,8 @@ SDValue TileTargetLowering::LowerOperation(SDValue Op,
     return Op;
   case ISD::GlobalAddress:
     return lowerGlobalAddress(Op, DAG);
+  case ISD::GlobalTLSAddress:
+    return lowerGlobalTLSAddress(Op, DAG);
   case ISD::JumpTable:
     return lowerJumpTable(Op, DAG);
   case ISD::BR_JT:
@@ -405,15 +518,23 @@ SDValue TileTargetLowering::lowerConstantPool(SDValue Op,
   SDLoc DL(Op);
   EVT PtrVT = Op.getValueType();
 
-  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
-    report_fatal_error("Tile: PIC constant pool lowering not yet supported");
-
-  // Absolute 64-bit address of the pool entry: moveli hw2_last, shl16insli hw1,
-  // shl16insli hw0, same materialization as a global address.
   auto Entry = [&](unsigned Flag) {
     return DAG.getTargetConstantPool(CP->getConstVal(), PtrVT, CP->getAlign(),
                                      CP->getOffset(), Flag);
   };
+
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
+    SDValue Off = DAG.getNode(TileISD::MOVE, DL, PtrVT,
+                              Entry(TileII::MO_HW1_LAST_GOT));
+    Off = DAG.getNode(TileISD::SAR16, DL, PtrVT, Off, Entry(TileII::MO_HW0_GOT));
+    SDValue GotEntry =
+        DAG.getNode(ISD::ADD, DL, PtrVT, getGlobalBaseReg(DAG), Off);
+    return DAG.getLoad(PtrVT, DL, DAG.getEntryNode(), GotEntry,
+                       MachinePointerInfo::getGOT(DAG.getMachineFunction()));
+  }
+
+  // Absolute 64-bit address of the pool entry: moveli hw2_last, shl16insli hw1,
+  // shl16insli hw0, same materialization as a global address.
   SDValue Addr = DAG.getNode(TileISD::MOVE, DL, PtrVT, Entry(TileII::MO_HW2_LAST));
   Addr = DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Entry(TileII::MO_HW1));
   return DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Entry(TileII::MO_HW0));
@@ -929,8 +1050,6 @@ SDValue TileTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   MachineFrameInfo &MFI = MF.getFrameInfo();
   EVT PtrVT = getPointerTy(DAG.getDataLayout());
   bool IsPIC = getTargetMachine().getRelocationModel() == Reloc::PIC_;
-  if (IsPIC)
-    report_fatal_error("Tile: PIC calls not yet supported");
 
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, IsVarArg, MF, ArgLocs, *DAG.getContext());
@@ -994,14 +1113,23 @@ SDValue TileTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   if (!MemOpChains.empty())
     Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, MemOpChains);
 
-  // Non-PIC direct calls reference the callee by name; the JUMPOFF relocation
-  // on the jal carries it. Indirect callees fall through as a register operand.
-  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
+  // A direct call references the callee by name; the JUMPOFF relocation on the
+  // jal carries it. Under PIC a preemptible callee goes through the PLT, and a
+  // general-dynamic TLS callee resolves to __tls_get_addr via tls_gd_call.
+  // Indirect callees fall through as a register operand.
+  if (Callee.getOpcode() == ISD::GlobalTLSAddress) {
+    GlobalAddressSDNode *G = cast<GlobalAddressSDNode>(Callee);
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl, PtrVT, 0,
-                                        TileII::MO_NO_FLAG);
-  else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee))
-    Callee =
-        DAG.getTargetExternalSymbol(S->getSymbol(), PtrVT, TileII::MO_NO_FLAG);
+                                        TileII::MO_TLS_GD_CALL);
+  } else if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+    unsigned Flag = (IsPIC && !G->getGlobal()->hasLocalLinkage())
+                        ? TileII::MO_PLT_CALL
+                        : TileII::MO_NO_FLAG;
+    Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl, PtrVT, 0, Flag);
+  } else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee)) {
+    unsigned Flag = IsPIC ? TileII::MO_PLT_CALL : TileII::MO_NO_FLAG;
+    Callee = DAG.getTargetExternalSymbol(S->getSymbol(), PtrVT, Flag);
+  }
 
   SDValue InFlag;
   for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {

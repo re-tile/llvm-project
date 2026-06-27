@@ -15,12 +15,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/TileBaseInfo.h"
 #include "MCTargetDesc/TileInstPrinter.h"
 #include "Tile.h"
+#include "TileMachineFunction.h"
 #include "TargetInfo/TileTargetInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstBuilder.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Compiler.h"
@@ -41,6 +46,7 @@ public:
   StringRef getPassName() const override { return "Tile Assembly Printer"; }
 
   void emitInstruction(const MachineInstr *MI) override;
+  void emitFunctionBodyStart() override;
 
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
                        const char *ExtraCode, raw_ostream &O) override;
@@ -56,6 +62,49 @@ private:
 } // end anonymous namespace
 
 char TileAsmPrinter::ID = 0;
+
+// When a function references the GOT (any PIC global, jump table, constant
+// pool or general-dynamic/initial-exec TLS access), the GOT base must be loaded
+// into r51 before first use. There is no fixed GOT-base register in the ABI, so
+// it is recomputed PC-relatively: lnk loads the address of the next bundle, then
+// the difference _GLOBAL_OFFSET_TABLE_ - .Llabel is added back. The plain
+// hw1_last/hw0 operators over a sym - label difference assemble to the PCREL
+// relocations, exactly as GNU as emits them.
+void TileAsmPrinter::emitFunctionBodyStart() {
+  AsmPrinter::emitFunctionBodyStart();
+
+  const auto *FI = MF->getInfo<TileFunctionInfo>();
+  if (!const_cast<TileFunctionInfo *>(FI)->globalBaseRegSet())
+    return;
+
+  MCContext &Ctx = OutContext;
+  Register GotReg = const_cast<TileFunctionInfo *>(FI)->getGlobalBaseReg();
+  Register LnkReg = const_cast<TileFunctionInfo *>(FI)->getLinkReg();
+
+  // lnk r50 ; the label sits at the next bundle, which is what lnk loads.
+  EmitToStreamer(*OutStreamer,
+                 MCInstBuilder(Tile::LNK).addReg(LnkReg).addImm(0));
+  MCSymbol *PcLabel = Ctx.createTempSymbol("got_pc");
+  OutStreamer->emitLabel(PcLabel);
+
+  MCSymbol *GotSym = Ctx.getOrCreateSymbol("_GLOBAL_OFFSET_TABLE_");
+  const MCExpr *Diff = MCBinaryExpr::createSub(
+      MCSymbolRefExpr::create(GotSym, Ctx),
+      MCSymbolRefExpr::create(PcLabel, Ctx), Ctx);
+  const MCExpr *Hi = MCSpecifierExpr::create(Diff, TileII::MO_HW1_LAST_PIC, Ctx);
+  const MCExpr *Lo = MCSpecifierExpr::create(Diff, TileII::MO_HW0_PIC, Ctx);
+
+  EmitToStreamer(*OutStreamer,
+                 MCInstBuilder(Tile::MOVELI).addReg(GotReg).addExpr(Hi));
+  EmitToStreamer(*OutStreamer, MCInstBuilder(Tile::SHL16INSLI)
+                                   .addReg(GotReg)
+                                   .addReg(GotReg)
+                                   .addExpr(Lo));
+  EmitToStreamer(*OutStreamer, MCInstBuilder(Tile::ADD)
+                                   .addReg(GotReg)
+                                   .addReg(GotReg)
+                                   .addReg(LnkReg));
+}
 
 void TileAsmPrinter::emitInstruction(const MachineInstr *MI) {
   if (MI->isDebugInstr())
