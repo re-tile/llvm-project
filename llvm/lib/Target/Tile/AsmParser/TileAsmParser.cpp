@@ -23,6 +23,7 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCParser/AsmLexer.h"
 #include "llvm/MC/MCParser/MCParsedAsmOperand.h"
 #include "llvm/MC/MCParser/MCTargetAsmParser.h"
@@ -46,11 +47,16 @@ class TileAsmParser : public MCTargetAsmParser {
   MCAsmParser &Parser;
   const MCRegisterInfo &MRI;
 
-  // The packetizer is disabled, so a bundle holds exactly one instruction. We
-  // accept the { ... } grouping for a single instruction (byte-identical to the
-  // bare form) and reject multi-instruction text bundles loudly.
+  // A VLIW bundle { a ; b } groups instructions issued in one cycle. Matched
+  // instructions inside an open bundle are buffered and flushed as one packet
+  // when the closing brace is seen: a single-instruction bundle emits bare
+  // (byte-identical to the unbraced form), a multi-instruction bundle emits a
+  // BUNDLE the code emitter merges into one 64-bit word.
   bool InBundle = false;
-  unsigned BundleCount = 0;
+  SmallVector<MCInst *, 2> BundledInsts;
+
+  bool emitOrBuffer(const MCInst &Inst, MCStreamer &Out, SMLoc IDLoc);
+  void flushBundle(MCStreamer &Out);
 
 #define GET_ASSEMBLER_HEADER
 #include "TileGenAsmMatcher.inc"
@@ -392,7 +398,7 @@ bool TileAsmParser::parseInstruction(ParseInstructionInfo &Info, StringRef Name,
                                      SMLoc NameLoc, OperandVector &Operands) {
   if (Name == "{") {
     InBundle = true;
-    BundleCount = 0;
+    BundledInsts.clear();
     return false;
   }
   if (Name == "}") {
@@ -473,34 +479,76 @@ bool TileAsmParser::emitSpecialInstruction(StringRef Name,
       return true;
   }
   Inst.setLoc(IDLoc);
-  Out.emitInstruction(Inst, getSTI());
+  return emitOrBuffer(Inst, Out, IDLoc);
+}
+
+bool TileAsmParser::emitOrBuffer(const MCInst &Inst, MCStreamer &Out,
+                                 SMLoc IDLoc) {
+  if (!InBundle) {
+    Out.emitInstruction(Inst, getSTI());
+    return false;
+  }
+
+  // The two issue slots of an X-format bundle are X0 and X1, and the backend
+  // carries exactly one fixed-slot encoding per instruction. Reject a bundle
+  // that would need two instructions in the same slot (which GNU as can satisfy
+  // by re-encoding one into the other pipe, but this backend cannot) rather
+  // than silently emit one over the other.
+  if (!TileII::isBundleMergeable(MII.get(Inst.getOpcode()).TSFlags))
+    return Error(IDLoc, "TILE-Gx load/store uses the Y2 bundle mode and cannot "
+                        "be packed with another instruction");
+  auto IsX0 = [&](unsigned Opc) {
+    return (MII.get(Opc).TSFlags >> TileII::EncPipePos) & TileII::EncPipeMask;
+  };
+  bool NewIsX0 = IsX0(Inst.getOpcode());
+  for (const MCInst *S : BundledInsts)
+    if (IsX0(S->getOpcode()) == NewIsX0)
+      return Error(IDLoc, "TILE-Gx bundle issues two instructions in the same "
+                          "pipe; no co-encoding exists for this pair");
+  if (BundledInsts.size() >= 2)
+    return Error(IDLoc, "TILE-Gx X-format bundle holds at most two "
+                        "instructions");
+
+  MCInst *Heap = getContext().createMCInst();
+  *Heap = Inst;
+  BundledInsts.push_back(Heap);
   return false;
+}
+
+void TileAsmParser::flushBundle(MCStreamer &Out) {
+  if (BundledInsts.empty())
+    return;
+  if (BundledInsts.size() == 1) {
+    Out.emitInstruction(*BundledInsts.front(), getSTI());
+  } else {
+    MCInst Bundle;
+    Bundle.setOpcode(Tile::BUNDLE);
+    for (MCInst *Sub : BundledInsts)
+      Bundle.addOperand(MCOperand::createInst(Sub));
+    Out.emitInstruction(Bundle, getSTI());
+  }
+  BundledInsts.clear();
 }
 
 bool TileAsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                             OperandVector &Operands,
                                             MCStreamer &Out, uint64_t &ErrorInfo,
                                             bool MatchingInlineAsm) {
-  // A bundle delimiter ({ or }) pushes no operands; nothing to emit.
-  if (Operands.empty())
+  // A bundle delimiter ({ or }) pushes no operands. The closing brace (which
+  // leaves InBundle clear) is where a buffered packet is flushed.
+  if (Operands.empty()) {
+    if (!InBundle)
+      flushBundle(Out);
     return false;
-
-  if (InBundle && BundleCount > 0)
-    return Error(IDLoc, "TILE-Gx multi-instruction bundle packing is not yet "
-                        "supported; emit one instruction per bundle");
+  }
 
   // lnk and ld_tls are codegen-only (lnk is even printed via a custom operand
   // method with no mnemonic in its AsmString), so the generated matcher never
   // sees them. They appear textually in the GOT-base and TLS-IE sequences, so
   // build their MCInst directly to keep the round-trip closed.
   StringRef Mnemonic = static_cast<TileOperand &>(*Operands[0]).getToken();
-  if (Mnemonic == "lnk" || Mnemonic == "ld_tls") {
-    if (emitSpecialInstruction(Mnemonic, Operands, IDLoc, Out))
-      return true;
-    if (InBundle)
-      ++BundleCount;
-    return false;
-  }
+  if (Mnemonic == "lnk" || Mnemonic == "ld_tls")
+    return emitSpecialInstruction(Mnemonic, Operands, IDLoc, Out);
 
   MCInst Inst;
   unsigned MatchResult =
@@ -508,10 +556,7 @@ bool TileAsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   switch (MatchResult) {
   case Match_Success:
     Inst.setLoc(IDLoc);
-    Out.emitInstruction(Inst, getSTI());
-    if (InBundle)
-      ++BundleCount;
-    return false;
+    return emitOrBuffer(Inst, Out, IDLoc);
   case Match_MissingFeature:
     return Error(IDLoc, "instruction requires a CPU feature not currently enabled");
   case Match_InvalidOperand: {
