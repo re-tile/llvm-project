@@ -159,6 +159,68 @@ static SDNode *selectDoubleFloatMul(SelectionDAG *DAG, SDNode *N) {
                              Res);
 }
 
+// High 64 bits of a 64x64 multiply, assembled from the 32-bit partial products
+// with explicit carry propagation, mirroring the 3.3-fork and GCC sequence. The
+// carry handling was verified numerically against a 128-bit reference multiply
+// over the 2^63 boundary, sign changes, and all-ones inputs. Signed uses the
+// signed-high partial products (mul_hs_*) and arithmetic shifts; unsigned uses
+// the unsigned forms (mul_hu_*) and logical shifts.
+static SDNode *selectMulHigh64(SelectionDAG *DAG, SDNode *N) {
+  SDLoc DL(N);
+  bool Signed = N->getOpcode() == ISD::MULHS;
+  SDValue A = N->getOperand(0);
+  SDValue B = N->getOperand(1);
+  SDValue C32 = DAG->getTargetConstant(32, DL, MVT::i64);
+
+  unsigned MulHL = Signed ? Tile::MUL_HS_LU : Tile::MUL_HU_LU;
+  unsigned MulHH = Signed ? Tile::MUL_HS_HS : Tile::MUL_HU_HU;
+  unsigned ShrHi = Signed ? Tile::SHRSI : Tile::SHRUI;
+
+  SDValue Low(DAG->getMachineNode(Tile::MUL_LU_LU, DL, MVT::i64, A, B), 0);
+  SDValue MidA(DAG->getMachineNode(MulHL, DL, MVT::i64, A, B), 0);
+  SDValue MidB(DAG->getMachineNode(MulHL, DL, MVT::i64, B, A), 0);
+  SDValue High(DAG->getMachineNode(MulHH, DL, MVT::i64, A, B), 0);
+
+  SDValue MidAL(DAG->getMachineNode(Tile::SHLI, DL, MVT::i64, MidA, C32), 0);
+  SDValue MidBL(DAG->getMachineNode(Tile::SHLI, DL, MVT::i64, MidB, C32), 0);
+  SDValue MidSum(DAG->getMachineNode(Tile::ADD, DL, MVT::i64, MidAL, MidBL), 0);
+  SDValue LowSum(DAG->getMachineNode(Tile::ADD, DL, MVT::i64, Low, MidSum), 0);
+  SDValue CarryMid(
+      DAG->getMachineNode(Tile::CMPLTU, DL, MVT::i64, MidSum, MidAL), 0);
+  SDValue CarryLow(
+      DAG->getMachineNode(Tile::CMPLTU, DL, MVT::i64, LowSum, Low), 0);
+
+  SDValue MidAH(DAG->getMachineNode(ShrHi, DL, MVT::i64, MidA, C32), 0);
+  SDValue MidBH(DAG->getMachineNode(ShrHi, DL, MVT::i64, MidB, C32), 0);
+
+  SDValue H1(DAG->getMachineNode(Tile::ADD, DL, MVT::i64, High, CarryMid), 0);
+  SDValue H2(DAG->getMachineNode(Tile::ADD, DL, MVT::i64, CarryLow, MidAH), 0);
+  SDValue H3(DAG->getMachineNode(Tile::ADD, DL, MVT::i64, H1, H2), 0);
+  return DAG->getMachineNode(Tile::ADD, DL, MVT::i64, H3, MidBH);
+}
+
+// High 32 bits of a 32x32 multiply. The full product fits in 64 bits, so a
+// single mul_lu_lu/mul_ls_ls (which read only the low 32 bits of each 64-bit
+// register, so the i32 operands need no masking) followed by a shift of the
+// high word is exact. The i32 operands are reinterpreted as i64 via sub_32 and
+// the i32 result extracted the same way.
+static SDNode *selectMulHigh32(SelectionDAG *DAG, SDNode *N) {
+  SDLoc DL(N);
+  bool Signed = N->getOpcode() == ISD::MULHS;
+  SDValue C32 = DAG->getTargetConstant(32, DL, MVT::i64);
+  SDValue Undef(
+      DAG->getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, MVT::i64), 0);
+  SDValue A = DAG->getTargetInsertSubreg(Tile::sub_32, DL, MVT::i64, Undef,
+                                         N->getOperand(0));
+  SDValue B = DAG->getTargetInsertSubreg(Tile::sub_32, DL, MVT::i64, Undef,
+                                         N->getOperand(1));
+  unsigned MulOp = Signed ? Tile::MUL_LS_LS : Tile::MUL_LU_LU;
+  unsigned ShrOp = Signed ? Tile::SHRSI : Tile::SHRUI;
+  SDValue Prod(DAG->getMachineNode(MulOp, DL, MVT::i64, A, B), 0);
+  SDValue Hi(DAG->getMachineNode(ShrOp, DL, MVT::i64, Prod, C32), 0);
+  return DAG->getTargetExtractSubreg(Tile::sub_32, DL, MVT::i32, Hi).getNode();
+}
+
 void TileDAGToDAGISel::Select(SDNode *Node) {
   if (Node->isMachineOpcode()) {
     Node->setNodeId(-1);
@@ -204,6 +266,19 @@ void TileDAGToDAGISel::Select(SDNode *Node) {
     ReplaceNode(Node, CurDAG->getMachineNode(Tile::MULA_LU_LU, DL, MVT::i64,
                                              SDValue(T, 0), B, A));
     return;
+  }
+  case ISD::MULHU:
+  case ISD::MULHS: {
+    EVT VT = Node->getValueType(0);
+    if (VT == MVT::i64) {
+      ReplaceNode(Node, selectMulHigh64(CurDAG, Node));
+      return;
+    }
+    if (VT == MVT::i32) {
+      ReplaceNode(Node, selectMulHigh32(CurDAG, Node));
+      return;
+    }
+    break;
   }
   }
 

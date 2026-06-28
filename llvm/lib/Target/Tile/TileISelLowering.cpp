@@ -112,6 +112,16 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   // sequence during selection, so keep the node off the legalizer's libcall
   // path by marking it Custom.
   setOperationAction(ISD::MUL, MVT::i64, Custom);
+  // The high half of a 64x64 multiply has no single instruction either; it is
+  // built from the same 32-bit partial products during selection (i64) or by
+  // widening to a full i64 product (i32). Keeping MULHU/MULHS Custom rather than
+  // Legal both supplies the missing pattern and tells the magic-number divide
+  // combiner that a multiply-high is available, so divide/modulo by a constant
+  // selects instead of crashing.
+  setOperationAction(ISD::MULHU, MVT::i64, Custom);
+  setOperationAction(ISD::MULHS, MVT::i64, Custom);
+  setOperationAction(ISD::MULHU, MVT::i32, Custom);
+  setOperationAction(ISD::MULHS, MVT::i32, Custom);
   setOperationAction(ISD::SDIV, MVT::i32, Expand);
   setOperationAction(ISD::SREM, MVT::i32, Expand);
   setOperationAction(ISD::SDIV, MVT::i64, Expand);
@@ -481,6 +491,12 @@ SDValue TileTargetLowering::LowerOperation(SDValue Op,
     return Op;
   case ISD::MUL:
     // Expanded into a multiply-add sequence during DAG-to-DAG selection.
+    return Op;
+  case ISD::MULHU:
+  case ISD::MULHS:
+    // Built from the 32-bit partial products during DAG-to-DAG selection.
+    // Kept off the generic expander (which would refold the result back into a
+    // multiply-high) by passing the node through unchanged.
     return Op;
   case ISD::GlobalAddress:
     return lowerGlobalAddress(Op, DAG);
