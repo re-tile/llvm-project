@@ -84,6 +84,12 @@ private:
   bool isX0Encoded(const MachineInstr &MI) const {
     return (MI.getDesc().TSFlags >> TileII::EncPipePos) & TileII::EncPipeMask;
   }
+
+  // True if MI is an X1-encoded integer ALU op that also has an X0-pipe encoding,
+  // so the packetizer can move it into the X0 slot to free X1 for another op.
+  bool hasX0Twin(const MachineInstr &MI) const {
+    return TileII::getX0PipeTwinOpcode(MI.getOpcode()) != 0;
+  }
 };
 
 } // namespace
@@ -128,10 +134,21 @@ bool TileVLIWPacketizerList::isLegalToPacketizeTogether(SUnit *SUI,
   const MachineInstr &I = *SUI->getInstr();
   const MachineInstr &J = *SUJ->getInstr();
 
-  // The two issue slots are X0 and X1; refuse same-slot pairs (no co-encoding)
-  // which also caps a bundle at two instructions.
-  if (isX0Encoded(I) == isX0Encoded(J))
+  // An X-format bundle has exactly two issue slots, X0 and X1.
+  if (CurrentPacketMIs.size() >= 2)
     return false;
+
+  bool IX0 = isX0Encoded(I), JX0 = isX0Encoded(J);
+  if (IX0 == JX0) {
+    // Same native pipe. Two X0-encoded ops cannot share a bundle: the backend
+    // carries no X1 encoding for X0-native ops (multiply, fp helpers, mm). Two
+    // X1-encoded ops can, but only if at least one is an integer ALU op with an
+    // X0 twin that endPacket can move into the low slot.
+    if (IX0)
+      return false;
+    if (!hasX0Twin(I) && !hasX0Twin(J))
+      return false;
+  }
 
   if (!SUJ->isSucc(SUI))
     return true;

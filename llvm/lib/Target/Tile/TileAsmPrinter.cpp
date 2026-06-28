@@ -115,8 +115,7 @@ void TileAsmPrinter::emitInstruction(const MachineInstr *MI) {
   // which merges the slots into one 64-bit word, and to the instruction printer,
   // which renders the { a ; b } syntax.
   if (MI->isBundle()) {
-    MCInst Bundle;
-    Bundle.setOpcode(Tile::BUNDLE);
+    SmallVector<MCInst *, 2> Subs;
     const MachineBasicBlock *MBB = MI->getParent();
     MachineBasicBlock::const_instr_iterator I = MI->getIterator();
     for (++I; I != MBB->instr_end() && I->isInsideBundle(); ++I) {
@@ -124,8 +123,20 @@ void TileAsmPrinter::emitInstruction(const MachineInstr *MI) {
         continue;
       MCInst *Sub = OutContext.createMCInst();
       LowerTileMachineInstrToMCInst(&*I, *Sub, *this);
-      Bundle.addOperand(MCOperand::createInst(Sub));
+      Subs.push_back(Sub);
     }
+    // The packetizer leaves both ALU ops in their native X1 encoding. Choose the
+    // X0/X1 slots and emission order canonically here so the asm and object paths
+    // (whose machine-level member order is not stable) agree, and so tile-as
+    // reproduces the bytes from the printed text.
+    if (Subs.size() == 2)
+      if (const char *Err = TileII::orderBundleForEmission(
+              Subs[0], Subs[1], *TM.getMCInstrInfo()))
+        report_fatal_error(Twine("Tile: ") + Err);
+    MCInst Bundle;
+    Bundle.setOpcode(Tile::BUNDLE);
+    for (MCInst *Sub : Subs)
+      Bundle.addOperand(MCOperand::createInst(Sub));
     EmitToStreamer(*OutStreamer, Bundle);
     return;
   }
