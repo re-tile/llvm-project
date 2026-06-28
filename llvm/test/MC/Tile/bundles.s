@@ -22,3 +22,12 @@
 
 # CHECK: { add r3, r4, r5 ; mulx r0, r0, r1 }    # encoding: [0x00,0x10,0xd0,0xd0,0x81,0x28,0x06,0x28]
 { add r3, r4, r5 ; mulx r0, r0, r1 }
+
+# Two integer ALU ops both match the X1 encoding; the first is re-encoded into
+# its X0 twin so the pair occupies complementary slots, byte-identical to GNU
+# tile-as. This is the case that lets ordinary integer code pack.
+# CHECK: { add r0, r1, r2 ; sub r3, r4, r5 }     # encoding: [0x40,0x20,0x0c,0xd0,0x81,0x28,0x68,0x28]
+{ add r0, r1, r2 ; sub r3, r4, r5 }
+
+# CHECK: { shl r3, r4, r5 ; or r0, r1, r2 }      # encoding: [0x03,0x51,0x28,0x51,0x20,0x10,0x3a,0x28]
+{ shl r3, r4, r5 ; or r0, r1, r2 }
