@@ -104,8 +104,33 @@ enum {
   SoloMask = 0x1,
 
   FormatTypePos = 5,
-  FormatTypeMask = 0xF
+  FormatTypeMask = 0xF,
+
+  // 1 = the instruction is encoded for the X0 pipe (low slot, X1 slot is FNOP);
+  // 0 = encoded for the X1 pipe (high slot, X0 slot is FNOP). Set by the X0
+  // instruction format classes in TileInstrFormats.td.
+  EncPipePos = 9,
+  EncPipeMask = 0x1,
+
+  // 1 = the instruction is emitted in the Y2 load/store bundle mode and cannot
+  // be slot-merged with another instruction.
+  Y2BundlePos = 10,
+  Y2BundleMask = 0x1
 };
+
+// FNOP fill for the empty issue slot of a single-instruction bundle. A standard
+// X-format instruction bakes one of these into its complementary slot, so two
+// such instructions merge into one bundle by ORing their real slots. Loads and
+// stores are emitted in the Y2 bundle mode (Inst{63-62} != 0) with a different
+// layout, so they are NOT mergeable this way.
+static constexpr uint64_t FnopX0 = 0x51483000ULL;       // fills bits 30-0
+static constexpr uint64_t FnopX1 = 0x50d46000ULL << 31; // fills bits 61-31
+
+// The instruction is encoded in a standard X-format bundle (one real slot, the
+// other FNOP) and so can be merged with a complementary-slot instruction.
+inline bool isBundleMergeable(uint64_t TSFlags) {
+  return !((TSFlags >> Y2BundlePos) & Y2BundleMask);
+}
 
 // Tile instruction issue slot.
 // This describe the final slot inst issued to.

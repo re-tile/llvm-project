@@ -70,8 +70,24 @@ class TileInst< dag outs,
         bits<1> isSoloInst = 0;
         let TSFlags{4} = isSoloInst;
 
-	TileFormat Form = f;	
+	TileFormat Form = f;
         let TSFlags{8-5} = f.Value;
+
+        // The physical issue slot this instruction is *encoded* for. tilegx
+        // encodes the same mnemonic differently per pipe, and the backend keeps
+        // exactly one fixed-slot encoding per instruction. 1 = X0-encoded (bits
+        // land in the low slot, X1 slot filled with FNOP), 0 = X1-encoded. The
+        // packetizer pairs one X0-encoded with one X1-encoded instruction; the
+        // code emitter uses it to merge the two halves of a bundle.
+        bits<1> isX0Pipe = 0;
+        let TSFlags{9} = isX0Pipe;
+
+        // Loads and stores are emitted in the Y2 bundle mode (Inst{63-62} != 0)
+        // with a layout that does not place FNOP in a fixed complementary slot,
+        // so they cannot be merged by the simple slot-OR. Set on the Y2 classes
+        // and read by the packetizer, parser and code emitter to keep them solo.
+        bits<1> isY2Bundle = 0;
+        let TSFlags{10} = isY2Bundle;
 }
 
 // *****************************************************
@@ -91,6 +107,7 @@ class TileInstX0RRR<bits<3> op, bits<10> sub_op, dag outs, dag ins,
   bits<6>  rsb;
   bits<6>  rd;
 
+  let isX0Pipe = 1;
   // Mark the bundle as X mode.
   let Inst{63-62} = 0x0;
   // Encode the X1 slot with FNOP.
@@ -110,6 +127,7 @@ class TileInstX0Unary<bits<3> op, bits<10> sub_op, bits<6> u_op,
   bits<6>  rs;
   bits<6>  rd;
 
+  let isX0Pipe = 1;
   let Inst{63-62} = 0x0;
   let Inst{61-31} = 0x50d46000;
   let Inst{30-28} = op;
@@ -129,6 +147,7 @@ class TileInstX0MM<bits<3> op, bits<4> sub_op,
   bits<6>  bfstart;
   bits<6>  bfend;
 
+  let isX0Pipe = 1;
   let Inst{63-62} = 0x0;
   let Inst{61-31} = 0x50d46000;
   let Inst{30-28} = op;
@@ -312,6 +331,7 @@ class TileSTOREY2<bits<2> op, dag outs, dag ins,
       : TileInst<outs, ins, asmstr, pattern, itin, f, s> {
   bits<6>  rs;
   bits<6>  addr;
+  let isY2Bundle = 1;
   // mark the bundle as Y Store mode
   let Inst{63-62} = 0x3;
   let Inst{61-58} = 0x7;
@@ -346,6 +366,7 @@ class TileLOADY2<bits<2> mode, bits<2> op, dag outs, dag ins,
       : TileInst<outs, ins, asmstr, pattern, itin, f, s> {
   bits<6>  rd;
   bits<6>  addr;
+  let isY2Bundle = 1;
   let Inst{63-62} = mode;
   let Inst{61-58} = 0x7;
   let Inst{57} = op{1};
@@ -912,6 +933,7 @@ class TileBundleY2L<bits<2> mode, bits<2> op, dag outs, dag ins,
       : TileInst<outs, ins, asmstr, pattern, itin, f, s> {
   bits<6>  rd;
   bits<6>  addr;
+  let isY2Bundle = 1;
   // mark the bundle as Y Load mode
   let Inst{63-62} = mode;
 
@@ -927,6 +949,7 @@ class TileBundleY2S<bits<2> op, dag outs, dag ins,
       : TileInst<outs, ins, asmstr, pattern, itin, f, s> {
   bits<6>  rs;
   bits<6>  addr;
+  let isY2Bundle = 1;
   // mark the bundle as Y Store mode
   let Inst{63-62} = 0x3;
 
