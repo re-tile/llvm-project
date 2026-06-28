@@ -4906,6 +4906,51 @@ def FETCHADDGEZ4 : TileInstX1RRR<0x5, 0x13,
 }
 
 //===----------------------------------------------------------------------===//
+// X0-pipe encoding twins of the common integer ALU ops.
+//===----------------------------------------------------------------------===//
+// The primary add/sub/and/or/xor/nor/addx/shl/shru/shrs defs above are all
+// X1-encoded, so two ALU ops could never share a bundle (the packetizer pairs
+// one X0-encoded with one X1-encoded op). These are alternate encodings of the
+// SAME operation in the X0 pipe, selected by the packetizer when it places an op
+// in the X0 slot. The op/sub_op values are the X0 RRR fields from binutils
+// opcodes/tilegx-opc.c (verified byte-exact vs tile-as). isCodeGenOnly keeps the
+// twin out of the asm matcher and disassembler so the primary mnemonic owns
+// those; the printer still renders it (as the plain mnemonic) so a packed bundle
+// reads back and re-assembles identically.
+let isCodeGenOnly = 1 in {
+def ADD_X0 : TileInstX0RRR<0x5, 0x03, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "add\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def SUB_X0 : TileInstX0RRR<0x5, 0x51, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "sub\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def AND_X0 : TileInstX0RRR<0x5, 0x04, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "and\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def OR_X0 : TileInstX0RRR<0x5, 0x41, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "or\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def XOR_X0 : TileInstX0RRR<0x5, 0xA0, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "xor\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def NOR_X0 : TileInstX0RRR<0x5, 0x40, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "nor\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def SHL_X0 : TileInstX0RRR<0x5, 0x4A, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "shl\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def SHRU_X0 : TileInstX0RRR<0x5, 0x4D, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "shru\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def SHRS_X0 : TileInstX0RRR<0x5, 0x4B, (outs CPURegs:$rd),
+    (ins CPURegs:$rsa, CPURegs:$rsb), "shrs\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+def ADDX_X0 : TileInstX0RRR<0x5, 0x02, (outs CPU32Regs:$rd),
+    (ins CPU32Regs:$rsa, CPU32Regs:$rsb), "addx\t$rd, $rsa, $rsb", [],
+    IIC_ALU, FrmRRR, S_X0_X1_Y0_Y1>;
+}
+
+//===----------------------------------------------------------------------===//
 // Floating Point Support
 //===----------------------------------------------------------------------===//
 include "TileInstrFP.td"
