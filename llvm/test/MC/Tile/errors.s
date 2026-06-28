@@ -3,7 +3,8 @@
 # CHECK: error: invalid instruction mnemonic
 notaninsn r0, r1
 
-# Multi-instruction bundle packing (the VLIW packetizer) is not implemented, so
-# the parser fails loudly rather than silently mis-encoding.
-# CHECK: error: TILE-Gx multi-instruction bundle packing is not yet supported
+# A bundle pairs one X0-encoded with one X1-encoded instruction. add and sub are
+# both X1-encoded and the backend has no co-encoding for two X1 ops in one
+# bundle, so the parser fails loudly rather than silently mis-encoding.
+# CHECK: error: TILE-Gx bundle issues two instructions in the same pipe
 { add r0, r0, r1 ; sub r2, r2, r3 }
