@@ -56,7 +56,7 @@ class TileAsmParser : public MCTargetAsmParser {
   SmallVector<MCInst *, 2> BundledInsts;
 
   bool emitOrBuffer(const MCInst &Inst, MCStreamer &Out, SMLoc IDLoc);
-  void flushBundle(MCStreamer &Out);
+  bool flushBundle(MCStreamer &Out, SMLoc IDLoc);
 
 #define GET_ASSEMBLER_HEADER
 #include "TileGenAsmMatcher.inc"
@@ -489,22 +489,11 @@ bool TileAsmParser::emitOrBuffer(const MCInst &Inst, MCStreamer &Out,
     return false;
   }
 
-  // The two issue slots of an X-format bundle are X0 and X1, and the backend
-  // carries exactly one fixed-slot encoding per instruction. Reject a bundle
-  // that would need two instructions in the same slot (which GNU as can satisfy
-  // by re-encoding one into the other pipe, but this backend cannot) rather
-  // than silently emit one over the other.
+  // Loads and stores use the Y2 bundle mode (different layout, no fixed FNOP
+  // slot) and cannot be slot-merged; keep them out of multi-op bundles.
   if (!TileII::isBundleMergeable(MII.get(Inst.getOpcode()).TSFlags))
     return Error(IDLoc, "TILE-Gx load/store uses the Y2 bundle mode and cannot "
                         "be packed with another instruction");
-  auto IsX0 = [&](unsigned Opc) {
-    return (MII.get(Opc).TSFlags >> TileII::EncPipePos) & TileII::EncPipeMask;
-  };
-  bool NewIsX0 = IsX0(Inst.getOpcode());
-  for (const MCInst *S : BundledInsts)
-    if (IsX0(S->getOpcode()) == NewIsX0)
-      return Error(IDLoc, "TILE-Gx bundle issues two instructions in the same "
-                          "pipe; no co-encoding exists for this pair");
   if (BundledInsts.size() >= 2)
     return Error(IDLoc, "TILE-Gx X-format bundle holds at most two "
                         "instructions");
@@ -515,19 +504,29 @@ bool TileAsmParser::emitOrBuffer(const MCInst &Inst, MCStreamer &Out,
   return false;
 }
 
-void TileAsmParser::flushBundle(MCStreamer &Out) {
+bool TileAsmParser::flushBundle(MCStreamer &Out, SMLoc IDLoc) {
   if (BundledInsts.empty())
-    return;
+    return false;
   if (BundledInsts.size() == 1) {
     Out.emitInstruction(*BundledInsts.front(), getSTI());
-  } else {
-    MCInst Bundle;
-    Bundle.setOpcode(Tile::BUNDLE);
-    for (MCInst *Sub : BundledInsts)
-      Bundle.addOperand(MCOperand::createInst(Sub));
-    Out.emitInstruction(Bundle, getSTI());
+    BundledInsts.clear();
+    return false;
   }
+
+  // Choose the X0/X1 slot for each op (the same assignment the code emitter uses
+  // when packetized codegen lowers a bundle), rewriting the op placed in X0 to
+  // its twin. A contradictory pair has no legal encoding and errors loudly.
+  if (const char *Err =
+          TileII::assignTwoSlotBundle(*BundledInsts[0], *BundledInsts[1], MII))
+    return Error(IDLoc, Err);
+
+  MCInst Bundle;
+  Bundle.setOpcode(Tile::BUNDLE);
+  for (MCInst *Sub : BundledInsts)
+    Bundle.addOperand(MCOperand::createInst(Sub));
+  Out.emitInstruction(Bundle, getSTI());
   BundledInsts.clear();
+  return false;
 }
 
 bool TileAsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
@@ -538,7 +537,7 @@ bool TileAsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   // leaves InBundle clear) is where a buffered packet is flushed.
   if (Operands.empty()) {
     if (!InBundle)
-      flushBundle(Out);
+      return flushBundle(Out, IDLoc);
     return false;
   }
 
