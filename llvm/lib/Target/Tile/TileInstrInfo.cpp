@@ -12,6 +12,7 @@
 
 #include "TileInstrInfo.h"
 #include "TileSubtarget.h"
+#include "llvm/CodeGen/DFAPacketizer.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -20,6 +21,16 @@
 #include "TileGenInstrInfo.inc"
 
 using namespace llvm;
+
+// Defines TileGenSubtargetInfo::createDFAPacketizer, the auto-generated DFA
+// resource model the VLIW packetizer reserves slots through.
+#include "TileGenDFAPacketizer.inc"
+
+DFAPacketizer *TileInstrInfo::CreateTargetScheduleState(
+    const TargetSubtargetInfo &STI) const {
+  const InstrItineraryData *II = STI.getInstrItineraryData();
+  return static_cast<const TileSubtarget &>(STI).createDFAPacketizer(II);
+}
 
 TileInstrInfo::TileInstrInfo(const TileSubtarget &ST)
     : TileGenInstrInfo(ST, RI, Tile::ADJCALLSTACKDOWN, Tile::ADJCALLSTACKUP),

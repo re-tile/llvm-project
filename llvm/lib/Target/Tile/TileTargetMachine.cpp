@@ -28,6 +28,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeTileTarget() {
 
   PassRegistry &PR = *PassRegistry::getPassRegistry();
   initializeTileDAGToDAGISelLegacyPass(PR);
+  initializeTileVLIWPacketizerPass(PR);
 }
 
 static Reloc::Model getEffectiveRelocModel(std::optional<Reloc::Model> RM) {
@@ -86,6 +87,7 @@ public:
 
   bool addInstSelector() override;
   void addPreSched2() override;
+  void addPreEmitPass() override;
 };
 } // namespace
 
@@ -100,4 +102,12 @@ bool TilePassConfig::addInstSelector() {
 
 void TilePassConfig::addPreSched2() {
   addPass(createTileExpandPseudoPass());
+}
+
+void TilePassConfig::addPreEmitPass() {
+  // Pack independent instructions into VLIW bundles once pseudos are expanded,
+  // registers are allocated and the frame is final. Bundling is pure
+  // performance, so only run it above -O0.
+  if (getOptLevel() != CodeGenOptLevel::None)
+    addPass(createTileVLIWPacketizer());
 }

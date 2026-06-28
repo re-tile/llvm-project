@@ -28,10 +28,12 @@ class PassRegistry;
 
 FunctionPass *createTileISelDag(TileTargetMachine &TM, CodeGenOptLevel OptLevel);
 FunctionPass *createTileExpandPseudoPass();
+FunctionPass *createTileVLIWPacketizer();
 void LowerTileMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
                                    AsmPrinter &AP);
 
 void initializeTileDAGToDAGISelLegacyPass(PassRegistry &);
+void initializeTileVLIWPacketizerPass(PassRegistry &);
 } // end namespace llvm
 
 // TILE-Gx uses 10 registers, r0 ~ r9, for argument passing.
