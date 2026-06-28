@@ -37,11 +37,22 @@ using namespace llvm;
 #define DEBUG_TYPE "mccodeemitter"
 
 namespace {
+// A tilegx X-format bundle is two issue slots packed into one 64-bit word:
+// the X1 slot occupies bits 63-31, the X0 slot bits 30-0. Every single
+// instruction is encoded with its real bits in its own slot and FNOP in the
+// other (see TileInstrFormats.td), so a packed bundle is just the X1-slot
+// half of the X1-encoded instruction merged with the X0-slot half of the
+// X0-encoded instruction.
+static constexpr uint64_t X1SlotMask = 0xFFFFFFFF80000000ULL; // bits 63-31
+static constexpr uint64_t X0SlotMask = 0x000000007FFFFFFFULL; // bits 30-0
+
 class TileMCCodeEmitter : public MCCodeEmitter {
   MCContext &Ctx;
+  const MCInstrInfo &MCII;
 
 public:
-  TileMCCodeEmitter(const MCInstrInfo &, MCContext &ctx) : Ctx(ctx) {}
+  TileMCCodeEmitter(const MCInstrInfo &mcii, MCContext &ctx)
+      : Ctx(ctx), MCII(mcii) {}
   TileMCCodeEmitter(const TileMCCodeEmitter &) = delete;
   void operator=(const TileMCCodeEmitter &) = delete;
   ~TileMCCodeEmitter() override = default;
@@ -80,6 +91,41 @@ void TileMCCodeEmitter::encodeInstruction(const MCInst &MI,
                                           SmallVectorImpl<char> &CB,
                                           SmallVectorImpl<MCFixup> &Fixups,
                                           const MCSubtargetInfo &STI) const {
+  // A packed VLIW bundle carries its issue-slot instructions as sub-MCInsts.
+  // Encode each in isolation (each already fills the complementary slot with
+  // FNOP) and overwrite the slot it really occupies in the accumulated word.
+  // Relocations come only from X1-pipe operands and ride at bundle offset 0, so
+  // the recorded fixups stay correct for the merged word.
+  if (MI.getOpcode() == Tile::BUNDLE) {
+    uint64_t Bundle = 0;
+    bool First = true;
+    for (const MCOperand &Op : MI) {
+      assert(Op.isInst() && "bundle operand is not a sub-instruction");
+      const MCInst &Sub = *Op.getInst();
+      uint64_t E = getBinaryCodeForInstr(Sub, Fixups, STI);
+      uint64_t TSFlags = MCII.get(Sub.getOpcode()).TSFlags;
+      bool SubIsX0 = (TSFlags >> TileII::EncPipePos) & TileII::EncPipeMask;
+      // The merge assumes the sub fills its complementary slot with FNOP. A
+      // non-standard (Y2 load/store) encoding would corrupt the other slot, so
+      // refuse rather than emit a wrong bundle. The packetizer and parser keep
+      // such instructions out of bundles; this guards the encoder itself.
+      uint64_t Comp = SubIsX0 ? (E & X1SlotMask) : (E & X0SlotMask);
+      uint64_t ExpectFnop = SubIsX0 ? TileII::FnopX1 : TileII::FnopX0;
+      if (!TileII::isBundleMergeable(TSFlags) || Comp != ExpectFnop)
+        report_fatal_error("Tile: instruction is not bundle-mergeable");
+      if (First) {
+        Bundle = E;
+        First = false;
+      } else if (SubIsX0) {
+        Bundle = (Bundle & X1SlotMask) | (E & X0SlotMask);
+      } else {
+        Bundle = (Bundle & X0SlotMask) | (E & X1SlotMask);
+      }
+    }
+    support::endian::write<uint64_t>(CB, Bundle, llvm::endianness::little);
+    return;
+  }
+
   uint64_t Bundle = getBinaryCodeForInstr(MI, Fixups, STI);
   support::endian::write<uint64_t>(CB, Bundle, llvm::endianness::little);
 }

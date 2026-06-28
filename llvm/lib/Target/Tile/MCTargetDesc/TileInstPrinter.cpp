@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TileInstPrinter.h"
+#include "TileMCTargetDesc.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
@@ -32,8 +33,27 @@ void TileInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) {
 void TileInstPrinter::printInst(const MCInst *MI, uint64_t Address,
                                 StringRef Annot, const MCSubtargetInfo &STI,
                                 raw_ostream &O) {
-  // Packetizer is disabled for first light: one instruction per bundle, so we
-  // print each instruction standalone without VLIW packet braces.
+  // A packed VLIW bundle prints as a brace-delimited, semicolon-separated list
+  // of its issue-slot instructions: { a ; b }. A single instruction prints bare
+  // (its complementary FNOP slot is implicit), matching GNU tile-as.
+  if (MI->getOpcode() == Tile::BUNDLE) {
+    O << "\t{ ";
+    bool First = true;
+    for (const MCOperand &Op : *MI) {
+      const MCInst &Sub = *Op.getInst();
+      if (!First)
+        O << " ; ";
+      First = false;
+      std::string Buf;
+      raw_string_ostream SubOS(Buf);
+      printInstruction(&Sub, Address, SubOS);
+      O << StringRef(Buf).trim();
+    }
+    O << " }";
+    printAnnotation(O, Annot);
+    return;
+  }
+
   printInstruction(MI, Address, O);
   printAnnotation(O, Annot);
 }

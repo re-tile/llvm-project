@@ -110,6 +110,26 @@ void TileAsmPrinter::emitInstruction(const MachineInstr *MI) {
   if (MI->isDebugInstr())
     return;
 
+  // A packetized bundle is emitted as a single BUNDLE MCInst whose operands are
+  // the issue-slot sub-instructions. The streamer hands it to the code emitter,
+  // which merges the slots into one 64-bit word, and to the instruction printer,
+  // which renders the { a ; b } syntax.
+  if (MI->isBundle()) {
+    MCInst Bundle;
+    Bundle.setOpcode(Tile::BUNDLE);
+    const MachineBasicBlock *MBB = MI->getParent();
+    MachineBasicBlock::const_instr_iterator I = MI->getIterator();
+    for (++I; I != MBB->instr_end() && I->isInsideBundle(); ++I) {
+      if (I->isDebugInstr() || I->isImplicitDef())
+        continue;
+      MCInst *Sub = OutContext.createMCInst();
+      LowerTileMachineInstrToMCInst(&*I, *Sub, *this);
+      Bundle.addOperand(MCOperand::createInst(Sub));
+    }
+    EmitToStreamer(*OutStreamer, Bundle);
+    return;
+  }
+
   MCInst TmpInst;
   LowerTileMachineInstrToMCInst(MI, TmpInst, *this);
   EmitToStreamer(*OutStreamer, TmpInst);
