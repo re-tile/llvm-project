@@ -79,6 +79,33 @@ multiclass TileVBINRRR_X0_INTRINSIC
          IIC_SIMD_P0, FrmRRR, S_X0>;
 }
 
+multiclass TileVACCRRR_X0_INTRINSIC
+             <string OpStr,
+              bits<3>op_x0, bits<10>subop_x0,
+              SDPatternOperator intrinsic_op> {
+
+  let Constraints = "$acc = $rd" in {
+  def ""
+      : TileInstX0RRR
+        <op_x0, subop_x0,
+         (outs CPURegs:$rd),
+         (ins CPURegs:$acc, CPURegs:$rsa, CPURegs:$rsb),
+         !strconcat(OpStr, "\t$rd, $rsa, $rsb"),
+         [(set (i64 CPURegs:$rd),
+            (intrinsic_op CPURegs:$acc, CPURegs:$rsa, CPURegs:$rsb))],
+         IIC_SIMD_P0, FrmRRR, S_X0>;
+
+  def "0_X0"
+      : TileBundleX0RRR
+        <op_x0, subop_x0,
+         (outs CPURegs:$rd),
+         (ins CPURegs:$acc, CPURegs:$rsa, CPURegs:$rsb),
+         !strconcat(OpStr, "\t$rd, $rsa, $rsb"),
+         [],
+         IIC_SIMD_P0, FrmRRR, S_X0>;
+  }
+}
+
 multiclass TileVBINIMM8_INTRINSIC
              <string OpStr,
               bits<3>op_x0, bits<8>subop_x0,
@@ -196,31 +223,31 @@ defm V1DDOTPU_INTRINSIC
      : TileVBINRRR_X0_INTRINSIC
        <"v1ddotpu", 0x5, 0xA2, int_tilegx_v1ddotpu>;
 defm V1DDOTPUA_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v1ddotpua", 0x5, 0xA1, int_tilegx_v1ddotpua>;
 defm V1DDOTPUS_INTRINSIC
      : TileVBINRRR_X0_INTRINSIC
        <"v1ddotpus", 0x5, 0x5E, int_tilegx_v1ddotpus>;
 defm V1DDOTPUSA_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v1ddotpusa", 0x5, 0x5D, int_tilegx_v1ddotpusa>;
 defm V1DOTP_INTRINSIC
      : TileVBINRRR_X0_INTRINSIC
        <"v1dotp", 0x5, 0x62, int_tilegx_v1dotp>;
 defm V1DOTPA_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v1dotpa", 0x5, 0x5F, int_tilegx_v1dotpa>;
 defm V1DOTPU_INTRINSIC
      : TileVBINRRR_X0_INTRINSIC
        <"v1dotpu", 0x5, 0xA4, int_tilegx_v1dotpu>;
 defm V1DOTPUA_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v1dotpua", 0x5, 0xA3, int_tilegx_v1dotpua>;
 defm V1DOTPUS_INTRINSIC
      : TileVBINRRR_X0_INTRINSIC
        <"v1dotpus", 0x5, 0x61, int_tilegx_v1dotpus>;
 defm V1DOTPUSA_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v1dotpusa", 0x5, 0x60, int_tilegx_v1dotpusa>;
 defm V1INT_H_INTRINSIC
      : TileVBINRRR_INTRINSIC
@@ -256,7 +283,7 @@ defm V1MZ_INTRINSIC
      : TileVBINRRR_INTRINSIC
        <"v1mz", 0x5, 0x6B, 0x5, 0x43, int_tilegx_v1mz>;
 defm V1SADAU_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v1sadau", 0x5, 0x6C, int_tilegx_v1sadau>;
 defm V1SADU_INTRINSIC
      : TileVBINRRR_X0_INTRINSIC
@@ -333,7 +360,7 @@ defm V2DOTP_INTRINSIC
      : TileVBINRRR_X0_INTRINSIC
        <"v2dotp", 0x5, 0x7E, int_tilegx_v2dotp>;
 defm V2DOTPA_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v2dotpa", 0x5, 0x7D, int_tilegx_v2dotpa>;
 defm V2INT_H_INTRINSIC
      : TileVBINRRR_INTRINSIC
@@ -378,10 +405,10 @@ defm V2PACKUC_INTRINSIC
      : TileVBINRRR_INTRINSIC
        <"v2packuc", 0x5, 0x8A, 0x5, 0x59, int_tilegx_v2packuc>;
 defm V2SADAS_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v2sadas", 0x5, 0x8B, int_tilegx_v2sadas>;
 defm V2SADAU_INTRINSIC
-     : TileVBINRRR_X0_INTRINSIC
+     : TileVACCRRR_X0_INTRINSIC
        <"v2sadau", 0x5, 0x8C, int_tilegx_v2sadau>;
 defm V2SADS_INTRINSIC
      : TileVBINRRR_X0_INTRINSIC

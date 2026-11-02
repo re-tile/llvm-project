@@ -62,31 +62,31 @@ def int_tilegx_v1ddotpu : ClangBuiltin<"__insn_v1ddotpu">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1ddotpua : ClangBuiltin<"__insn_v1ddotpua">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1ddotpus : ClangBuiltin<"__insn_v1ddotpus">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1ddotpusa : ClangBuiltin<"__insn_v1ddotpusa">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1dotp : ClangBuiltin<"__insn_v1dotp">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1dotpa : ClangBuiltin<"__insn_v1dotpa">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1dotpu : ClangBuiltin<"__insn_v1dotpu">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1dotpua : ClangBuiltin<"__insn_v1dotpua">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1dotpus : ClangBuiltin<"__insn_v1dotpus">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1dotpusa : ClangBuiltin<"__insn_v1dotpusa">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1int_h : ClangBuiltin<"__insn_v1int_h">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
@@ -122,7 +122,7 @@ def int_tilegx_v1mz : ClangBuiltin<"__insn_v1mz">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1sadau : ClangBuiltin<"__insn_v1sadau">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v1sadu : ClangBuiltin<"__insn_v1sadu">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
@@ -198,7 +198,7 @@ def int_tilegx_v2dotp : ClangBuiltin<"__insn_v2dotp">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v2dotpa : ClangBuiltin<"__insn_v2dotpa">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v2int_h : ClangBuiltin<"__insn_v2int_h">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
@@ -243,10 +243,10 @@ def int_tilegx_v2packuc : ClangBuiltin<"__insn_v2packuc">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v2sadas : ClangBuiltin<"__insn_v2sadas">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v2sadau : ClangBuiltin<"__insn_v2sadau">,
-  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], []>;
 
 def int_tilegx_v2sads : ClangBuiltin<"__insn_v2sads">,
   Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], []>;
