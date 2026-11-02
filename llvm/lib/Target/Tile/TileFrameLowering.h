@@ -21,7 +21,7 @@ protected:
 
 public:
   explicit TileFrameLowering(const TileSubtarget &sti)
-      : TargetFrameLowering(StackGrowsDown, Align(8), 0), STI(sti) {}
+      : TargetFrameLowering(StackGrowsDown, Align(16), 0), STI(sti) {}
 
   void emitPrologue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
   void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
