@@ -217,6 +217,7 @@ void setPPC64TargetInfo(Ctx &);
 void setPPCTargetInfo(Ctx &);
 void setRISCVTargetInfo(Ctx &);
 void setSPARCV9TargetInfo(Ctx &);
+void setTileTargetInfo(Ctx &);
 void setSystemZTargetInfo(Ctx &);
 void setX86TargetInfo(Ctx &);
 void setX86_64TargetInfo(Ctx &);

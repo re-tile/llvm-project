@@ -1781,6 +1781,8 @@ static uint16_t getBitcodeMachineKind(Ctx &ctx, StringRef path,
     return EM_SPARCV9;
   case Triple::systemz:
     return EM_S390;
+  case Triple::tilegx:
+    return EM_TILEGX;
   case Triple::x86:
     return t.isOSIAMCU() ? EM_IAMCU : EM_386;
   case Triple::x86_64:

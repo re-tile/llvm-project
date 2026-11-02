@@ -780,6 +780,7 @@ static int64_t getTlsTpOffset(Ctx &ctx, const Symbol &s) {
     return s.getVA(ctx, 0) + (tls->p_vaddr & (tls->p_align - 1)) - 0x7000;
   case EM_LOONGARCH:
   case EM_RISCV:
+  case EM_TILEGX:
     // For TLSDESC=>IE, R_RISCV_TLSDESC_{LOAD_LO12,ADD_LO12_I,CALL} reference
     // a non-TLS label and reach here.
     if (s.type != STT_TLS)

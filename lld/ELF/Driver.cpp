@@ -167,6 +167,7 @@ static std::tuple<ELFKind, uint16_t, uint8_t> parseEmulation(Ctx &ctx,
           .Case("elf64btsmip", {ELF64BEKind, EM_MIPS})
           .Case("elf64ltsmip", {ELF64LEKind, EM_MIPS})
           .Case("elf64lriscv", {ELF64LEKind, EM_RISCV})
+          .Case("elf64tilegx", {ELF64LEKind, EM_TILEGX})
           .Case("elf64ppc", {ELF64BEKind, EM_PPC64})
           .Case("elf64lppc", {ELF64LEKind, EM_PPC64})
           .Cases({"elf_amd64", "elf_x86_64"}, {ELF64LEKind, EM_X86_64})
@@ -1328,7 +1329,8 @@ static SmallVector<StringRef, 0> getSymbolOrderingFile(Ctx &ctx,
 static bool getIsRela(Ctx &ctx, opt::InputArgList &args) {
   // The psABI specifies the default relocation entry format.
   bool rela = is_contained({EM_AARCH64, EM_AMDGPU, EM_HEXAGON, EM_LOONGARCH,
-                            EM_PPC, EM_PPC64, EM_RISCV, EM_S390, EM_X86_64},
+                            EM_PPC, EM_PPC64, EM_RISCV, EM_S390, EM_TILEGX,
+                            EM_X86_64},
                            ctx.arg.emachine);
   // If -z rel or -z rela is specified, use the last option.
   for (auto *arg : args.filtered(OPT_z)) {
