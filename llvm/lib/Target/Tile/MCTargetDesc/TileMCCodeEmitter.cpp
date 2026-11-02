@@ -149,10 +149,6 @@ TileMCCodeEmitter::getMachineOpValue(const MCInst &MI, const MCOperand &MO,
   // relocation.
   if (const auto *SE = dyn_cast<MCSpecifierExpr>(Expr)) {
     Tile::Fixups Kind;
-    // The GOT base self-computation feeds a sym - pclabel difference through the
-    // PCREL halfword fixups; mark them PC-relative so MC folds the local label
-    // into the addend instead of rejecting the subtraction.
-    bool PCRel = false;
     switch (SE->getSpecifier()) {
     default:
       report_fatal_error("Tile: unsupported relocation specifier");
@@ -177,14 +173,14 @@ TileMCCodeEmitter::getMachineOpValue(const MCInst &MI, const MCOperand &MO,
       break;
     // PC-relative halfwords for the GOT base self-computation. The textual
     // operator is the plain hw0/hw1_last on a sym - label difference; the
-    // PCREL relocation is selected here and matches GNU as.
+    // PCREL relocation is selected here and matches GNU as. The fixup itself is
+    // not PC-relative, since ELFObjectWriter turns the same-section difference
+    // into a PC-relative relocation and asserts the fixup was not already one.
     case TileII::MO_HW0_PIC:
       Kind = Tile::fixup_Tile_X1_HW0_PCREL;
-      PCRel = true;
       break;
     case TileII::MO_HW1_LAST_PIC:
       Kind = Tile::fixup_Tile_X1_HW1_LAST_PCREL;
-      PCRel = true;
       break;
     // Thread-local storage halfwords and relaxation hints.
     case TileII::MO_HW0_TLS_GD:
@@ -215,7 +211,8 @@ TileMCCodeEmitter::getMachineOpValue(const MCInst &MI, const MCOperand &MO,
       Kind = Tile::fixup_Tile_X1_TLS_IE_LOAD;
       break;
     }
-    Fixups.push_back(MCFixup::create(0, Expr, MCFixupKind(Kind), PCRel));
+    Fixups.push_back(
+        MCFixup::create(0, Expr, MCFixupKind(Kind), /*PCRel=*/false));
     return 0;
   }
 
