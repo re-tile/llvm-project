@@ -66,9 +66,12 @@ public:
     if (!Value)
       return;
 
-    // Data already points at the fixup location, so the packed bits are merged
-    // into the eight bytes of this bundle directly.
-    for (unsigned I = 0; I != 8; ++I)
+    // Data already points at the fixup location. Bundle fixups merge into all
+    // eight bytes of the bundle, data fixups only into their own width.
+    unsigned NumBytes = Fixup.getKind() < FirstTargetFixupKind
+                            ? getFixupKindInfo(Fixup.getKind()).TargetSize / 8
+                            : 8;
+    for (unsigned I = 0; I != NumBytes; ++I)
       Data[I] |= uint8_t((Value >> (I * 8)) & 0xff);
   }
 
