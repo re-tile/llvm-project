@@ -1892,6 +1892,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::bpfel:
   case Triple::msp430:
   case Triple::systemz:
+  case Triple::tilegx:
   case Triple::ve:
     T.setArch(UnknownArch);
     break;
@@ -2039,6 +2040,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::spirv64:
   case Triple::systemz:
   case Triple::tcele64:
+  case Triple::tilegx:
   case Triple::ve:
   case Triple::wasm64:
   case Triple::x86_64:
@@ -2550,6 +2552,7 @@ ExceptionHandling Triple::getDefaultExceptionHandling() const {
   case Triple::m68k:
   case Triple::msp430:
   case Triple::systemz:
+  case Triple::tilegx:
   case Triple::xcore:
   case Triple::xtensa:
     return ExceptionHandling::DwarfCFI;

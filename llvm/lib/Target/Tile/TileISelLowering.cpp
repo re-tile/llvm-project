@@ -65,6 +65,7 @@ static bool CC_TileByval(unsigned ValNo, MVT ValVT, MVT LocVT,
   return true;
 }
 
+#define GET_CALLING_CONV_IMPL
 #include "TileGenCallingConv.inc"
 
 TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
