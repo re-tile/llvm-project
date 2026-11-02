@@ -15,6 +15,7 @@
 
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/MC/MCContext.h"
 
 namespace llvm {
 
@@ -27,6 +28,7 @@ class TileFunctionInfo : public MachineFunctionInfo {
   Register SRetReturnReg;
   Register GlobalBaseReg;
   Register LinkReg;
+  MCSymbol *PicLabel = nullptr;
   int VarArgsFrameIndex = 0;
   int VarArgsResSlot = 0;
   mutable int DynAllocFI = 0;
@@ -58,6 +60,14 @@ public:
   bool linkRegFixed() const;
   bool linkRegSet() const;
   Register getLinkReg();
+
+  // The bundle after the prologue's lnk, whose address the link register
+  // holds. PC-relative addresses are differences against it.
+  MCSymbol *getPicLabel(MCContext &Ctx) {
+    if (!PicLabel)
+      PicLabel = Ctx.createTempSymbol("got_pc");
+    return PicLabel;
+  }
 
   int getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
   void setVarArgsFrameIndex(int Index) { VarArgsFrameIndex = Index; }

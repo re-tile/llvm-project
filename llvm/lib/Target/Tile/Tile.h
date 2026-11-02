@@ -23,7 +23,10 @@ class TileTargetMachine;
 class FunctionPass;
 class MachineInstr;
 class AsmPrinter;
+class MCContext;
 class MCInst;
+class StringRef;
+template <typename T> class ArrayRef;
 class PassRegistry;
 
 FunctionPass *createTileISelDag(TileTargetMachine &TM, CodeGenOptLevel OptLevel);
@@ -31,6 +34,8 @@ FunctionPass *createTileExpandPseudoPass();
 FunctionPass *createTileVLIWPacketizer();
 void LowerTileMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
                                    AsmPrinter &AP);
+void lowerTileTableBundle(StringRef Mnemonic, ArrayRef<int64_t> Values,
+                          MCInst &OutMI, MCContext &Ctx);
 
 void initializeTileDAGToDAGISelLegacyPass(PassRegistry &);
 void initializeTileVLIWPacketizerPass(PassRegistry &);

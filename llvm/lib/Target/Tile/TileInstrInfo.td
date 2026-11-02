@@ -4451,6 +4451,42 @@ def ADJCALLSTACKUP   : TilePseudo<(outs), (ins i32imm:$amt1, i32imm:$amt2),
                                   [(callseq_end timm:$amt1, timm:$amt2)], IIC_PSEUDO_ALL>;
 }
 
+// One issue slot of an assembler bundle: the TileOpcodeTable index, the pipe,
+// then the operands, registers as their numbers.
+def TABLE_INST : TilePseudo<(outs), (ins variable_ops), "", [], IIC_PSEUDO_ALL>;
+
+// Instructions codegen has no encoding class for. TileMCInstLower turns each
+// into a TABLE_INST naming the tile-as mnemonic after the TBL_ prefix.
+class TileTableOp<dag outs, dag ins, list<dag> pattern>
+    : TilePseudo<outs, ins, "", pattern, IIC_PSEUDO_ALL>;
+
+let Constraints = "$acc = $rd" in {
+def TBL_DBLALIGN : TileTableOp<(outs CPURegs:$rd),
+    (ins CPURegs:$acc, CPURegs:$ra, CPURegs:$rb),
+    [(set CPURegs:$rd, (int_tilegx_dblalign CPURegs:$acc, CPURegs:$ra,
+                                            CPURegs:$rb))]>;
+def TBL_SHUFFLEBYTES : TileTableOp<(outs CPURegs:$rd),
+    (ins CPURegs:$acc, CPURegs:$ra, CPURegs:$rb),
+    [(set CPURegs:$rd, (int_tilegx_shufflebytes CPURegs:$acc, CPURegs:$ra,
+                                                CPURegs:$rb))]>;
+}
+foreach N = ["2", "4", "6"] in
+def TBL_DBLALIGN#N : TileTableOp<(outs CPURegs:$rd),
+    (ins CPURegs:$ra, CPURegs:$rb),
+    [(set CPURegs:$rd, (!cast<Intrinsic>("int_tilegx_dblalign"#N)
+                            CPURegs:$ra, CPURegs:$rb))]>;
+
+let hasSideEffects = 1 in {
+foreach Name = ["PREFETCH", "PREFETCH_L1", "PREFETCH_L1_FAULT", "PREFETCH_L2",
+                "PREFETCH_L2_FAULT", "PREFETCH_L3", "PREFETCH_L3_FAULT",
+                "WH64", "FINV", "FLUSH", "INV", "ICOH"] in
+def TBL_#Name : TileTableOp<(outs), (ins CPURegs:$ra),
+    [(!cast<Intrinsic>("int_tilegx_"#!tolower(Name)) CPURegs:$ra)]>;
+foreach Name = ["DRAIN", "FLUSHWB", "NAP"] in
+def TBL_#Name : TileTableOp<(outs), (ins),
+    [(!cast<Intrinsic>("int_tilegx_"#!tolower(Name)))]>;
+}
+
 // Materializes the GOT base in r51 via lnk r50. Placed by emitPrologue after
 // the callee-saved spills and expanded by the asm printer.
 let Defs = [R50, R51], hasSideEffects = 1, isNotDuplicable = 1 in
@@ -4834,6 +4870,9 @@ def : Pat<(int_tilegx_addx CPU32Regs:$rsa, CPU32Regs:$rsb),
           (ADDX CPU32Regs:$rsa, CPU32Regs:$rsb)>;
 def : Pat<(int_tilegx_clz CPURegs:$rs), (CLZ CPURegs:$rs)>;
 def : Pat<(int_tilegx_ctz CPURegs:$rs), (CTZ CPURegs:$rs)>;
+def : Pat<(int_tilegx_shl CPURegs:$a, CPURegs:$b), (SHL CPURegs:$a, CPURegs:$b)>;
+def : Pat<(int_tilegx_mf), (MF)>;
+def : Pat<(i64 (int_thread_pointer)), (COPY (i64 TP))>;
 def : Pat<(int_tilegx_pcnt CPURegs:$rs), (PCNT CPURegs:$rs)>;
 def : Pat<(int_tilegx_revbytes CPURegs:$rs), (REVBYTES CPURegs:$rs)>;
 

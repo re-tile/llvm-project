@@ -396,4 +396,23 @@ def int_tilegx_cmpexch : ClangBuiltin<"__insn_cmpexch">,
   Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i64_ty], [IntrArgMemOnly]>;
 def int_tilegx_cmpexch4 : ClangBuiltin<"__insn_cmpexch4">,
   Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrArgMemOnly]>;
+
+// Cache, prefetch and alignment helpers lowered through the opcode table.
+def int_tilegx_dblalign : ClangBuiltin<"__insn_dblalign">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_ptr_ty], [IntrNoMem]>;
+foreach N = ["2", "4", "6"] in
+def int_tilegx_dblalign#N : ClangBuiltin<"__insn_dblalign"#N>,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_shufflebytes : ClangBuiltin<"__insn_shufflebytes">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_shl : ClangBuiltin<"__insn_shl">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+foreach Name = ["prefetch", "prefetch_l1", "prefetch_l1_fault", "prefetch_l2",
+                "prefetch_l2_fault", "prefetch_l3", "prefetch_l3_fault",
+                "wh64", "finv", "flush", "inv", "icoh"] in
+def int_tilegx_#Name : ClangBuiltin<"__insn_"#Name>,
+  Intrinsic<[], [llvm_ptr_ty], [IntrHasSideEffects]>;
+foreach Name = ["drain", "flushwb", "mf", "nap"] in
+def int_tilegx_#Name : ClangBuiltin<"__insn_"#Name>,
+  Intrinsic<[], [], [IntrHasSideEffects]>;
 } // end TargetPrefix

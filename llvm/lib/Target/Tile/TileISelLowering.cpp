@@ -20,12 +20,15 @@
 #include "TileCallingConv.h"
 #include "TileMachineFunction.h"
 #include "TileSubtarget.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm;
@@ -88,9 +91,9 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   setStackPointerRegisterToSaveRestore(Tile::SP);
 
   // i1 loads always widen to a full register.
-  setLoadExtAction(ISD::EXTLOAD, MVT::i64, MVT::i1, Promote);
-  setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MVT::i1, Promote);
-  setLoadExtAction(ISD::SEXTLOAD, MVT::i64, MVT::i1, Promote);
+  for (MVT VT : {MVT::i32, MVT::i64})
+    for (unsigned Ext : {ISD::EXTLOAD, ISD::ZEXTLOAD, ISD::SEXTLOAD})
+      setLoadExtAction(Ext, VT, MVT::i1, Promote);
 
   // Population count on 32-bit values runs through the 64-bit pcnt.
   setOperationAction(ISD::CTPOP, MVT::i32, Promote);
@@ -135,8 +138,10 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::UDIVREM, MVT::i32, Expand);
   setOperationAction(ISD::SDIVREM, MVT::i64, Expand);
   setOperationAction(ISD::UDIVREM, MVT::i64, Expand);
-  setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
-  setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
+  for (MVT VT : {MVT::i32, MVT::i64}) {
+    setOperationAction(ISD::UMUL_LOHI, VT, Expand);
+    setOperationAction(ISD::SMUL_LOHI, VT, Expand);
+  }
 
   // Only left rotate is provided; right rotate becomes a negated left rotate.
   setOperationAction(ISD::ROTR, MVT::i32, Expand);
@@ -153,6 +158,7 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::GlobalTLSAddress, MVT::i64, Custom);
   setOperationAction(ISD::JumpTable, MVT::i64, Custom);
+  setOperationAction(ISD::BlockAddress, MVT::i64, Custom);
   setOperationAction(ISD::ConstantPool, MVT::i64, Custom);
   setOperationAction(ISD::BR_JT, MVT::Other, Custom);
 
@@ -166,6 +172,8 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   // alloca keeps the 16-byte reserve at the new top of stack, so it is lowered
   // by hand rather than through the generic stack-pointer adjust.
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i64, Custom);
+  setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
+  setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
 
   setOperationAction(ISD::FRAMEADDR, MVT::i64, Custom);
   setOperationAction(ISD::RETURNADDR, MVT::i64, Custom);
@@ -333,7 +341,11 @@ EVT TileTargetLowering::getSetCCResultType(const DataLayout &, LLVMContext &,
 
 unsigned TileTargetLowering::getJumpTableEncoding() const {
   // Absolute 64-bit block addresses in .rodata; lowerBR_JT loads an entry and
-  // jumps to it. The generic AsmPrinter emits these entries directly.
+  // jumps to it. The generic AsmPrinter emits these entries directly. PIC
+  // stores 32-bit offsets from the table instead, since an absolute address in
+  // read-only data would need a text relocation.
+  if (isPositionIndependent())
+    return MachineJumpTableInfo::EK_LabelDifference32;
   return MachineJumpTableInfo::EK_BlockAddress;
 }
 
@@ -353,6 +365,20 @@ SDValue TileTargetLowering::getGlobalBaseReg(SelectionDAG &DAG) const {
   return DAG.getRegister(FI->getGlobalBaseReg(), MVT::i64);
 }
 
+// sym - .Lgot_pc added to the link register the prologue's lnk loaded. ld.so
+// runs its own code before it relocates its GOT, so local symbols must not go
+// through it.
+SDValue TileTargetLowering::getPCRelAddress(SDValue High, SDValue Low,
+                                            SelectionDAG &DAG) const {
+  SDLoc DL(High);
+  TileFunctionInfo *FI = DAG.getMachineFunction().getInfo<TileFunctionInfo>();
+  FI->getGlobalBaseReg();
+  SDValue Off = DAG.getNode(TileISD::MOVE, DL, MVT::i64, High);
+  Off = DAG.getNode(TileISD::SAR16, DL, MVT::i64, Off, Low);
+  return DAG.getNode(ISD::ADD, DL, MVT::i64,
+                     DAG.getRegister(FI->getLinkReg(), MVT::i64), Off);
+}
+
 SDValue TileTargetLowering::lowerGlobalAddress(SDValue Op,
                                                SelectionDAG &DAG) const {
   const GlobalAddressSDNode *GA = cast<GlobalAddressSDNode>(Op);
@@ -360,11 +386,19 @@ SDValue TileTargetLowering::lowerGlobalAddress(SDValue Op,
   const GlobalValue *GV = GA->getGlobal();
   int64_t Offset = GA->getOffset();
 
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_ &&
+      getTargetMachine().shouldAssumeDSOLocal(GV))
+    return getPCRelAddress(
+        DAG.getTargetGlobalAddress(GV, DL, MVT::i64, Offset,
+                                   TileII::MO_HW1_LAST_PIC),
+        DAG.getTargetGlobalAddress(GV, DL, MVT::i64, Offset,
+                                   TileII::MO_HW0_PIC),
+        DAG);
+
   if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
     // GOT-relative: build the 32-bit GOT offset (moveli hw1_last_got,
     // shl16insli hw0_got), add the GOT base, then load the entry to get the
-    // symbol address. Every symbol is routed through the GOT, which always
-    // links; GCC additionally short-circuits locals to a PC-relative form.
+    // symbol address.
     SDValue High =
         DAG.getTargetGlobalAddress(GV, DL, MVT::i64, 0, TileII::MO_HW1_LAST_GOT);
     SDValue Low =
@@ -474,24 +508,36 @@ SDValue TileTargetLowering::lowerJumpTable(SDValue Op, SelectionDAG &DAG) const 
   SDLoc DL(Op);
   EVT PtrVT = Op.getValueType();
 
-  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
-    SDValue High =
-        DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW1_LAST_GOT);
-    SDValue Low =
-        DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW0_GOT);
-    SDValue Off = DAG.getNode(TileISD::MOVE, DL, PtrVT, High);
-    Off = DAG.getNode(TileISD::SAR16, DL, PtrVT, Off, Low);
-    SDValue Entry =
-        DAG.getNode(ISD::ADD, DL, PtrVT, getGlobalBaseReg(DAG), Off);
-    return DAG.getLoad(PtrVT, DL, DAG.getEntryNode(), Entry,
-                       MachinePointerInfo::getGOT(DAG.getMachineFunction()));
-  }
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
+    return getPCRelAddress(
+        DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW1_LAST_PIC),
+        DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW0_PIC), DAG);
 
   SDValue High =
       DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW2_LAST);
   SDValue Middle = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW1);
   SDValue Low = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, TileII::MO_HW0);
 
+  SDValue Addr = DAG.getNode(TileISD::MOVE, DL, PtrVT, High);
+  Addr = DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Middle);
+  return DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Low);
+}
+
+// A label address (computed goto) is materialized like a jump table base.
+SDValue TileTargetLowering::lowerBlockAddress(SDValue Op,
+                                              SelectionDAG &DAG) const {
+  const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
+  SDLoc DL(Op);
+  EVT PtrVT = Op.getValueType();
+
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
+    return getPCRelAddress(
+        DAG.getTargetBlockAddress(BA, PtrVT, 0, TileII::MO_HW1_LAST_PIC),
+        DAG.getTargetBlockAddress(BA, PtrVT, 0, TileII::MO_HW0_PIC), DAG);
+
+  SDValue High = DAG.getTargetBlockAddress(BA, PtrVT, 0, TileII::MO_HW2_LAST);
+  SDValue Middle = DAG.getTargetBlockAddress(BA, PtrVT, 0, TileII::MO_HW1);
+  SDValue Low = DAG.getTargetBlockAddress(BA, PtrVT, 0, TileII::MO_HW0);
   SDValue Addr = DAG.getNode(TileISD::MOVE, DL, PtrVT, High);
   Addr = DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Middle);
   return DAG.getNode(TileISD::SAR16, DL, PtrVT, Addr, Low);
@@ -510,14 +556,19 @@ SDValue TileTargetLowering::lowerBR_JT(SDValue Op, SelectionDAG &DAG) const {
   // Address of the selected entry = Table + Index * 8; load the absolute target
   // it holds and jump there. BRINDJT carries the jump-table index so the
   // indirect branch records its successor blocks.
-  Index =
-      DAG.getNode(ISD::SHL, DL, PtrVT, Index, DAG.getConstant(3, DL, MVT::i32));
+  bool PIC = isPositionIndependent();
+  Index = DAG.getNode(ISD::SHL, DL, PtrVT, Index,
+                      DAG.getConstant(PIC ? 2 : 3, DL, MVT::i32));
   SDValue Addr = DAG.getNode(ISD::ADD, DL, PtrVT, Index, Table);
-  SDValue Target = DAG.getLoad(
-      PtrVT, DL, Chain, Addr,
-      MachinePointerInfo::getJumpTable(DAG.getMachineFunction()));
+  MachinePointerInfo Info =
+      MachinePointerInfo::getJumpTable(DAG.getMachineFunction());
+  SDValue Target =
+      PIC ? DAG.getExtLoad(ISD::SEXTLOAD, DL, PtrVT, Chain, Addr, Info, MVT::i32)
+          : DAG.getLoad(PtrVT, DL, Chain, Addr, Info);
+  SDValue Dest =
+      PIC ? DAG.getNode(ISD::ADD, DL, PtrVT, Target, Table) : Target;
   return DAG.getNode(TileISD::BRINDJT, DL, MVT::Other, Target.getValue(1),
-                     Target, JTI);
+                     Dest, JTI);
 }
 
 SDValue TileTargetLowering::LowerOperation(SDValue Op,
@@ -542,6 +593,8 @@ SDValue TileTargetLowering::LowerOperation(SDValue Op,
     return lowerGlobalTLSAddress(Op, DAG);
   case ISD::JumpTable:
     return lowerJumpTable(Op, DAG);
+  case ISD::BlockAddress:
+    return lowerBlockAddress(Op, DAG);
   case ISD::BR_JT:
     return lowerBR_JT(Op, DAG);
   case ISD::VASTART:
@@ -719,15 +772,9 @@ SDValue TileTargetLowering::lowerConstantPool(SDValue Op,
                                      CP->getOffset(), Flag);
   };
 
-  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
-    SDValue Off = DAG.getNode(TileISD::MOVE, DL, PtrVT,
-                              Entry(TileII::MO_HW1_LAST_GOT));
-    Off = DAG.getNode(TileISD::SAR16, DL, PtrVT, Off, Entry(TileII::MO_HW0_GOT));
-    SDValue GotEntry =
-        DAG.getNode(ISD::ADD, DL, PtrVT, getGlobalBaseReg(DAG), Off);
-    return DAG.getLoad(PtrVT, DL, DAG.getEntryNode(), GotEntry,
-                       MachinePointerInfo::getGOT(DAG.getMachineFunction()));
-  }
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_)
+    return getPCRelAddress(Entry(TileII::MO_HW1_LAST_PIC),
+                           Entry(TileII::MO_HW0_PIC), DAG);
 
   // Absolute 64-bit address of the pool entry: moveli hw2_last, shl16insli hw1,
   // shl16insli hw0, same materialization as a global address.
@@ -756,10 +803,20 @@ SDValue TileTargetLowering::lowerFCOPYSIGN(SDValue Op,
   EVT IntVT = (VT == MVT::f64) ? MVT::i64 : MVT::i32;
   uint64_t SignPos = (VT == MVT::f64) ? 63 : 31;
   SDValue X = DAG.getNode(ISD::BITCAST, DL, IntVT, Op.getOperand(0));
-  SDValue Y = DAG.getNode(ISD::BITCAST, DL, IntVT, Op.getOperand(1));
   SDValue Pos = DAG.getConstant(SignPos, DL, IntVT);
+
+  // The DAG combiner folds an fptrunc or fpext into fcopysign, so the sign
+  // operand can be the other width.
+  EVT SignVT = Op.getOperand(1).getValueType();
+  EVT SignIntVT = (SignVT == MVT::f64) ? MVT::i64 : MVT::i32;
+  SDValue SignPosY =
+      DAG.getConstant(SignIntVT.getSizeInBits() - 1, DL, SignIntVT);
+  SDValue Y = DAG.getNode(ISD::BITCAST, DL, SignIntVT, Op.getOperand(1));
+
   // Extract the sign bit from Y and insert it into the sign position of X.
-  SDValue Sign = DAG.getNode(TileISD::BFEXTU, DL, IntVT, Y, Pos, Pos);
+  SDValue Sign = DAG.getZExtOrTrunc(
+      DAG.getNode(TileISD::BFEXTU, DL, SignIntVT, Y, SignPosY, SignPosY), DL,
+      IntVT);
   SDValue Ins = DAG.getNode(TileISD::BFINS, DL, IntVT, Sign, Pos, Pos, X);
   return DAG.getNode(ISD::BITCAST, DL, VT, Ins);
 }
@@ -802,6 +859,9 @@ SDValue TileTargetLowering::lowerVACOPY(SDValue Op, SelectionDAG &DAG) const {
                        MachinePointerInfo(SrcSV));
 }
 
+// GCC's tilegx_gimplify_va_arg_expr. An argument that would straddle or start
+// at va_list.skip, the entry sp, comes from past the caller's 16-byte reserve,
+// and a type aligned beyond 8 bytes rounds next up by adding its bit 3.
 SDValue TileTargetLowering::lowerVAARG(SDValue Op, SelectionDAG &DAG) const {
   SDNode *Node = Op.getNode();
   EVT VT = Node->getValueType(0);
@@ -810,27 +870,36 @@ SDValue TileTargetLowering::lowerVAARG(SDValue Op, SelectionDAG &DAG) const {
   const Value *SV = cast<SrcValueSDNode>(Node->getOperand(2))->getValue();
   SDLoc dl(Node);
   EVT PtrVT = getPointerTy(DAG.getDataLayout());
+  EVT CondVT = getSetCCResultType(DAG.getDataLayout(), *DAG.getContext(), PtrVT);
+  uint64_t RSize = alignTo(VT.getStoreSize(), 8);
+  Align TypeAlign =
+      DAG.getDataLayout().getABITypeAlign(VT.getTypeForEVT(*DAG.getContext()));
 
-  // The bottom 16 bytes of every frame are reserved, so once va_arg walks off
-  // the register save area and reaches the entry stack pointer it must hop the
-  // reserve zone. va_list.sp (the entry sp) is the boundary marker.
-  SDValue SPPtr = DAG.getNode(ISD::ADD, dl, PtrVT, VAListPtr,
-                              DAG.getConstant(8, dl, PtrVT));
-  SDValue VAList =
+  SDValue Args =
       DAG.getLoad(PtrVT, dl, InChain, VAListPtr, MachinePointerInfo(SV));
-  SDValue SPSave =
-      DAG.getLoad(PtrVT, dl, VAList.getValue(1), SPPtr, MachinePointerInfo(SV));
-
-  SDValue NextPtr = DAG.getNode(ISD::ADD, dl, PtrVT, VAList,
+  SDValue SkipPtr = DAG.getNode(ISD::ADD, dl, PtrVT, VAListPtr,
                                 DAG.getConstant(8, dl, PtrVT));
-  SDValue Cond = DAG.getNode(ISD::XOR, dl, PtrVT, SPSave, NextPtr);
-  SDValue AdjPtr = DAG.getNode(ISD::ADD, dl, PtrVT, VAList,
-                               DAG.getConstant(24, dl, PtrVT));
-  AdjPtr = DAG.getNode(ISD::SELECT, dl, PtrVT, Cond, NextPtr, AdjPtr);
+  SDValue Skip =
+      DAG.getLoad(PtrVT, dl, Args.getValue(1), SkipPtr, MachinePointerInfo(SV));
+  if (TypeAlign > Align(8))
+    Args = DAG.getNode(ISD::ADD, dl, PtrVT, Args,
+                       DAG.getNode(ISD::AND, dl, PtrVT, Args,
+                                   DAG.getConstant(8, dl, PtrVT)));
 
-  InChain = DAG.getStore(VAList.getValue(1), dl, AdjPtr, VAListPtr,
+  SDValue End = DAG.getNode(ISD::ADD, dl, PtrVT, Args,
+                            DAG.getConstant(RSize, dl, PtrVT));
+  SDValue Cross = DAG.getNode(
+      ISD::AND, dl, CondVT, DAG.getSetCC(dl, CondVT, End, Skip, ISD::SETUGT),
+      DAG.getSetCC(dl, CondVT, Args, Skip, ISD::SETULE));
+  SDValue PastReserve = DAG.getNode(ISD::ADD, dl, PtrVT, Skip,
+                                    DAG.getConstant(16, dl, PtrVT));
+  SDValue Addr = DAG.getNode(ISD::SELECT, dl, PtrVT, Cross, PastReserve, Args);
+
+  SDValue Next = DAG.getNode(ISD::ADD, dl, PtrVT, Addr,
+                             DAG.getConstant(RSize, dl, PtrVT));
+  InChain = DAG.getStore(Skip.getValue(1), dl, Next, VAListPtr,
                          MachinePointerInfo(SV));
-  return DAG.getLoad(VT, dl, InChain, VAList, MachinePointerInfo());
+  return DAG.getLoad(VT, dl, InChain, Addr, MachinePointerInfo());
 }
 
 SDValue TileTargetLowering::lowerDYNAMIC_STACKALLOC(SDValue Op,
@@ -1495,6 +1564,14 @@ TileTargetLowering::getConstraintType(StringRef Constraint) const {
     case 'd':
     case 'y':
       return C_RegisterClass;
+    case 'I':
+    case 'J':
+    case 'K':
+    case 'L':
+    case 'N':
+    case 'O':
+    case 'P':
+      return C_Immediate;
     }
   }
   if (parseRConstraint(Constraint) >= 0)
@@ -1515,6 +1592,27 @@ void TileTargetLowering::LowerAsmOperandForConstraint(
         return;
       }
     }
+    return;
+  }
+  // GCC's tilegx immediate constraints, checked once inlining has made the
+  // operand a constant.
+  if (Constraint.size() == 1 && StringRef("IJKLNOP").contains(Constraint[0])) {
+    auto *C = dyn_cast<ConstantSDNode>(Op);
+    if (!C)
+      return;
+    int64_t V = C->getSExtValue();
+    uint64_t U = C->getZExtValue();
+    bool Fits = StringSwitch<bool>(Constraint)
+                    .Case("I", isInt<8>(V))
+                    .Case("J", isInt<16>(V))
+                    .Case("K", isUInt<16>(U))
+                    .Case("L", V >= -129 && V <= 126)
+                    .Case("N", U == (U & 0xff) * 0x0101010101010101ULL)
+                    .Case("O", V == 0)
+                    .Case("P", U == uint64_t(uint16_t(int8_t(U))) *
+                                        0x0001000100010001ULL);
+    if (Fits)
+      Ops.push_back(DAG.getTargetConstant(V, SDLoc(Op), Op.getValueType()));
     return;
   }
   TargetLowering::LowerAsmOperandForConstraint(Op, Constraint, Ops, DAG);
@@ -1558,4 +1656,31 @@ TileTargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
     return TargetLowering::getRegForInlineAsmConstraint(TRI, Reg, VT);
   }
   return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
+}
+
+// glibc keeps the stack guard in the TCB at tp - 16, where GCC's
+// TARGET_THREAD_SSP_OFFSET reads it. There is no __stack_chk_guard symbol.
+Value *TileTargetLowering::getIRStackGuard(
+    IRBuilderBase &IRB, const LibcallLoweringInfo &Libcalls) const {
+  Module *M = IRB.GetInsertBlock()->getModule();
+  Function *ThreadPointer = Intrinsic::getOrInsertDeclaration(
+      M, Intrinsic::thread_pointer, IRB.getPtrTy());
+  return IRB.CreateConstGEP1_32(IRB.getInt8Ty(), IRB.CreateCall(ThreadPointer),
+                                -16);
+}
+
+// Named-register globals read the thread pointer and stack pointer, which the
+// allocator never hands out.
+Register
+TileTargetLowering::getRegisterByName(const char *RegName, LLT VT,
+                                      const MachineFunction &MF) const {
+  Register Reg = StringSwitch<Register>(RegName)
+                     .Case("tp", Tile::TP)
+                     .Case("sp", Tile::SP)
+                     .Case("lr", Tile::LR)
+                     .Case("r52", Tile::FP)
+                     .Default(Register());
+  if (!Reg)
+    reportFatalUsageError(Twine("Invalid register name \"") + RegName + "\".");
+  return Reg;
 }

@@ -17,6 +17,7 @@
 
 #include "MCTargetDesc/TileBaseInfo.h"
 #include "MCTargetDesc/TileInstPrinter.h"
+#include "MCTargetDesc/TileOpcodeTable.h"
 #include "Tile.h"
 #include "TileMachineFunction.h"
 #include "TargetInfo/TileTargetInfo.h"
@@ -46,6 +47,7 @@ public:
   StringRef getPassName() const override { return "Tile Assembly Printer"; }
 
   void emitInstruction(const MachineInstr *MI) override;
+  bool emitSequence(const MachineInstr *MI);
   void emitGotSetup();
 
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
@@ -79,7 +81,7 @@ void TileAsmPrinter::emitGotSetup() {
   // lnk r50 ; the label sits at the next bundle, which is what lnk loads.
   EmitToStreamer(*OutStreamer,
                  MCInstBuilder(Tile::LNK).addReg(LnkReg).addImm(0));
-  MCSymbol *PcLabel = Ctx.createTempSymbol("got_pc");
+  MCSymbol *PcLabel = const_cast<TileFunctionInfo *>(FI)->getPicLabel(Ctx);
   OutStreamer->emitLabel(PcLabel);
 
   MCSymbol *GotSym = Ctx.getOrCreateSymbol("_GLOBAL_OFFSET_TABLE_");
@@ -101,6 +103,41 @@ void TileAsmPrinter::emitGotSetup() {
                                    .addReg(LnkReg));
 }
 
+// Codegen-only instructions that stand for two bundles. Their TableGen
+// records carry only the first instruction's encoding.
+bool TileAsmPrinter::emitSequence(const MachineInstr *MI) {
+  auto Reg = [&](unsigned I) -> int64_t {
+    return MF->getSubtarget().getRegisterInfo()->getEncodingValue(
+        MI->getOperand(I).getReg());
+  };
+  auto Emit = [&](StringRef Mnemonic, ArrayRef<int64_t> Values) {
+    MCInst Bundle;
+    lowerTileTableBundle(Mnemonic, Values, Bundle, OutContext);
+    EmitToStreamer(*OutStreamer, Bundle);
+  };
+
+  switch (MI->getOpcode()) {
+  case Tile::CLZ32:
+    Emit("shli", {Reg(0), Reg(1), 32});
+    Emit("clz", {Reg(0), Reg(0)});
+    return true;
+  case Tile::REVBYTES32:
+    Emit("revbytes", {Reg(0), Reg(1)});
+    Emit("shrui", {Reg(0), Reg(0), 32});
+    return true;
+  case Tile::ATOMIC_CMP_SWAP:
+  case Tile::ATOMIC_CMP_SWAP32: {
+    int64_t CmpExchValue = *TileISA::findSpr("CMPEXCH_VALUE");
+    Emit("mtspr", {CmpExchValue, Reg(2)});
+    Emit(MI->getOpcode() == Tile::ATOMIC_CMP_SWAP ? "cmpexch" : "cmpexch4",
+         {Reg(0), Reg(1), Reg(3)});
+    return true;
+  }
+  default:
+    return false;
+  }
+}
+
 void TileAsmPrinter::emitInstruction(const MachineInstr *MI) {
   if (MI->isDebugInstr())
     return;
@@ -109,6 +146,9 @@ void TileAsmPrinter::emitInstruction(const MachineInstr *MI) {
     emitGotSetup();
     return;
   }
+
+  if (emitSequence(MI))
+    return;
 
   // A packetized bundle is emitted as a single BUNDLE MCInst whose operands are
   // the issue-slot sub-instructions. The streamer hands it to the code emitter,

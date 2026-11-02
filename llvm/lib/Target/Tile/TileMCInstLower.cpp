@@ -17,9 +17,16 @@
 
 #include "Tile.h"
 #include "MCTargetDesc/TileBaseInfo.h"
+#include "MCTargetDesc/TileOpcodeTable.h"
+#include "TileMachineFunction.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/AsmPrinter.h"
+#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
@@ -39,14 +46,54 @@ static MCOperand lowerSymbolOperand(const MachineOperand &MO,
   // directly as the MCSpecifierExpr code and decoded by the code emitter and
   // the asm printer.
   unsigned Flag = MO.getTargetFlags();
+  if (Flag == TileII::MO_HW1_LAST_PIC || Flag == TileII::MO_HW0_PIC) {
+    MCSymbol *PicLabel =
+        AP.MF->getInfo<TileFunctionInfo>()->getPicLabel(Ctx);
+    Expr = MCBinaryExpr::createSub(Expr, MCSymbolRefExpr::create(PicLabel, Ctx),
+                                   Ctx);
+  }
   if (Flag != TileII::MO_NO_FLAG)
     Expr = MCSpecifierExpr::create(Expr, Flag, Ctx);
 
   return MCOperand::createExpr(Expr);
 }
 
+// A one-slot assembler bundle of the tile-as mnemonic, in the first of Y2, X1
+// and X0 it issues in, as tile-as would place it.
+void llvm::lowerTileTableBundle(StringRef Mnemonic, ArrayRef<int64_t> Values,
+                                MCInst &OutMI, MCContext &Ctx) {
+  using namespace TileISA;
+  unsigned Index = *findOpcode(Mnemonic);
+  const Opcode &Op = opcode(Index);
+  Pipe P = Op.hasPipe(PipeY2) ? PipeY2 : Op.hasPipe(PipeX1) ? PipeX1 : PipeX0;
+
+  MCInst *Sub = Ctx.createMCInst();
+  Sub->setOpcode(Tile::TABLE_INST);
+  Sub->addOperand(MCOperand::createImm(Index));
+  Sub->addOperand(MCOperand::createImm(P));
+  for (int64_t Value : Values)
+    Sub->addOperand(MCOperand::createImm(Value));
+  OutMI.setOpcode(Tile::BUNDLE);
+  OutMI.addOperand(MCOperand::createInst(Sub));
+}
+
+static void lowerTableOp(const MachineInstr *MI, StringRef Mnemonic,
+                         MCInst &OutMI, AsmPrinter &AP) {
+  const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
+  SmallVector<int64_t, 4> Values;
+  for (const MachineOperand &MO : MI->operands())
+    if (MO.isReg() && !(MO.isUse() && MO.isTied()))
+      Values.push_back(TRI->getEncodingValue(MO.getReg()));
+  lowerTileTableBundle(Mnemonic, Values, OutMI, AP.OutContext);
+}
+
 void llvm::LowerTileMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
                                          AsmPrinter &AP) {
+  StringRef Name =
+      AP.MF->getSubtarget().getInstrInfo()->getName(MI->getOpcode());
+  if (Name.consume_front("TBL_"))
+    return lowerTableOp(MI, Name.lower(), OutMI, AP);
+
   OutMI.setOpcode(MI->getOpcode());
 
   for (const MachineOperand &MO : MI->operands()) {
