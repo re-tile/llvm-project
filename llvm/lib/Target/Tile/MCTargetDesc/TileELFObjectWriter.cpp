@@ -12,6 +12,7 @@
 #include "llvm/MC/MCELFObjectWriter.h"
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCObjectWriter.h"
+#include "llvm/MC/MCSymbolELF.h"
 #include "llvm/MC/MCValue.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstdint>
@@ -24,6 +25,8 @@ public:
   TileELFObjectWriter(uint8_t OSABI);
   ~TileELFObjectWriter() override = default;
 
+  bool needsRelocateWithSymbol(const MCValue &, unsigned Type) const override;
+
 protected:
   unsigned getRelocType(const MCFixup &Fixup, const MCValue &Target,
                         bool IsPCRel) const override;
@@ -35,9 +38,7 @@ TileELFObjectWriter::TileELFObjectWriter(uint8_t OSABI)
     : MCELFObjectTargetWriter(/*Is64Bit=*/true, OSABI, ELF::EM_TILEGX,
                               /*HasRelocationAddend=*/true) {}
 
-unsigned TileELFObjectWriter::getRelocType(const MCFixup &Fixup,
-                                           const MCValue &Target,
-                                           bool IsPCRel) const {
+static unsigned getFixupRelocType(const MCFixup &Fixup, bool IsPCRel) {
   switch (Fixup.getKind()) {
   default:
     llvm_unreachable("invalid fixup kind!");
@@ -114,7 +115,50 @@ unsigned TileELFObjectWriter::getRelocType(const MCFixup &Fixup,
   }
 }
 
+// The linker only accepts a TLS relocation against an STT_TLS symbol, and an
+// undefined TLS variable gets that type only from the relocations against it.
+unsigned TileELFObjectWriter::getRelocType(const MCFixup &Fixup,
+                                           const MCValue &Target,
+                                           bool IsPCRel) const {
+  unsigned Type = getFixupRelocType(Fixup, IsPCRel);
+  switch (Type) {
+  case ELF::R_TILEGX_IMM16_X1_HW0_TLS_GD:
+  case ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_GD:
+  case ELF::R_TILEGX_IMM16_X1_HW0_TLS_IE:
+  case ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_IE:
+  case ELF::R_TILEGX_IMM16_X1_HW0_TLS_LE:
+  case ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_LE:
+  case ELF::R_TILEGX_TLS_GD_CALL:
+  case ELF::R_TILEGX_IMM8_X1_TLS_GD_ADD:
+  case ELF::R_TILEGX_IMM8_X1_TLS_ADD:
+  case ELF::R_TILEGX_TLS_IE_LOAD:
+    if (auto *Sym = const_cast<MCSymbol *>(Target.getAddSym()))
+      static_cast<MCSymbolELF *>(Sym)->setType(ELF::STT_TLS);
+    break;
+  default:
+    break;
+  }
+  return Type;
+}
+
 std::unique_ptr<MCObjectTargetWriter>
 llvm::createTileELFObjectWriter(uint8_t OSABI) {
   return std::make_unique<TileELFObjectWriter>(OSABI);
+}
+
+// A GOT relocation selects one slot per symbol and the linker adds the addend
+// to the slot offset, so a local label must not decay to section + offset.
+bool TileELFObjectWriter::needsRelocateWithSymbol(const MCValue &,
+                                                  unsigned Type) const {
+  switch (Type) {
+  case ELF::R_TILEGX_IMM16_X0_HW0_GOT:
+  case ELF::R_TILEGX_IMM16_X1_HW0_GOT:
+  case ELF::R_TILEGX_IMM16_X0_HW0_LAST_GOT:
+  case ELF::R_TILEGX_IMM16_X1_HW0_LAST_GOT:
+  case ELF::R_TILEGX_IMM16_X0_HW1_LAST_GOT:
+  case ELF::R_TILEGX_IMM16_X1_HW1_LAST_GOT:
+    return true;
+  default:
+    return false;
+  }
 }
