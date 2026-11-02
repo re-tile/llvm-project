@@ -270,6 +270,10 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::FP16_TO_FP, ValVT, Expand);
     setOperationAction(ISD::STRICT_FP_TO_FP16, ValVT, Expand);
     setOperationAction(ISD::STRICT_FP16_TO_FP, ValVT, Expand);
+    setOperationAction(ISD::FP_TO_BF16, ValVT, Expand);
+    setOperationAction(ISD::BF16_TO_FP, ValVT, Expand);
+    setOperationAction(ISD::STRICT_FP_TO_BF16, ValVT, Expand);
+    setOperationAction(ISD::STRICT_BF16_TO_FP, ValVT, Expand);
   }
 
   // Atomic load/store have no dedicated instruction: an aligned ld/st is

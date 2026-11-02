@@ -43,6 +43,10 @@ public:
     WIntType = UnsignedInt;
     LongDoubleWidth = LongDoubleAlign = 64;
     LongDoubleFormat = &llvm::APFloat::IEEEdouble();
+    // Storage only, arithmetic goes through float.
+    HasFloat16 = true;
+    BFloat16Width = BFloat16Align = 16;
+    BFloat16Format = &llvm::APFloat::BFloat();
     // 128-bit stack alignment and a 64-bit lock-free atomic word.
     SuitableAlign = 128;
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
@@ -52,6 +56,8 @@ public:
 
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override;
+
+  bool hasBFloat16Type() const override { return true; }
 
   bool hasFeature(StringRef Feature) const override {
     return Feature == "tilegx";
