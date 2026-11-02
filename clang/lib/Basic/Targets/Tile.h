@@ -45,6 +45,8 @@ public:
     LongDoubleFormat = &llvm::APFloat::IEEEdouble();
     // Storage only, arithmetic goes through float.
     HasFloat16 = true;
+    // One rounding mode and no exception flags, so constrained FP is plain FP.
+    HasStrictFP = true;
     BFloat16Width = BFloat16Align = 16;
     BFloat16Format = &llvm::APFloat::BFloat();
     // 128-bit stack alignment and a 64-bit lock-free atomic word.

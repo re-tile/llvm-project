@@ -248,6 +248,10 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
     setCondCodeAction(ISD::SETOLE, VT, Expand);
     setCondCodeAction(ISD::SETOGT, VT, Expand);
     setCondCodeAction(ISD::SETOGE, VT, Expand);
+    // No exception flags and one rounding mode, so a strict compare is a
+    // plain one that keeps its chain.
+    setOperationAction(ISD::STRICT_FSETCC, VT, Custom);
+    setOperationAction(ISD::STRICT_FSETCCS, VT, Custom);
   }
 
   setTargetDAGCombine(ISD::SELECT);
@@ -612,6 +616,14 @@ SDValue TileTargetLowering::LowerOperation(SDValue Op,
     return lowerVACOPY(Op, DAG);
   case ISD::DYNAMIC_STACKALLOC:
     return lowerDYNAMIC_STACKALLOC(Op, DAG);
+  case ISD::STRICT_FSETCC:
+  case ISD::STRICT_FSETCCS: {
+    SDLoc DL(Op);
+    SDValue SetCC = DAG.getNode(ISD::SETCC, DL, Op.getValueType(),
+                                Op.getOperand(1), Op.getOperand(2),
+                                Op.getOperand(3));
+    return DAG.getMergeValues({SetCC, Op.getOperand(0)}, DL);
+  }
   case ISD::FRAMEADDR:
     return lowerFRAMEADDR(Op, DAG);
   case ISD::RETURNADDR:
