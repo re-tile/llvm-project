@@ -258,6 +258,13 @@ void TargetLoweringObjectFileELF::Initialize(MCContext &Ctx,
                     dwarf::DW_EH_PE_sdata4;
     CallSiteEncoding = dwarf::DW_EH_PE_udata4;
     break;
+  case Triple::tilegx:
+    LSDAEncoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata8;
+    PersonalityEncoding = dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
+                          dwarf::DW_EH_PE_sdata8;
+    TTypeEncoding = dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
+                    dwarf::DW_EH_PE_sdata8;
+    break;
   case Triple::sparcv9:
     LSDAEncoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4;
     if (isPositionIndependent()) {

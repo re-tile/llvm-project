@@ -377,6 +377,9 @@ void MCObjectFileInfo::initELFMCObjectFileInfo(const Triple &T, bool Large) {
   case Triple::bpfeb:
     FDECFIEncoding = dwarf::DW_EH_PE_sdata8;
     break;
+  case Triple::tilegx:
+    FDECFIEncoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata8;
+    break;
   case Triple::hexagon:
     FDECFIEncoding =
         PositionIndependent ? dwarf::DW_EH_PE_pcrel : dwarf::DW_EH_PE_absptr;
