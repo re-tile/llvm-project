@@ -119,7 +119,11 @@ void TileAsmPrinter::emitInstruction(const MachineInstr *MI) {
     const MachineBasicBlock *MBB = MI->getParent();
     MachineBasicBlock::const_instr_iterator I = MI->getIterator();
     for (++I; I != MBB->instr_end() && I->isInsideBundle(); ++I) {
-      if (I->isDebugInstr() || I->isImplicitDef())
+      // Meta instructions (KILL, IMPLICIT_DEF, CFI, debug values, ...) carry no
+      // encoding. The generic AsmPrinter filters them for unbundled code, but
+      // this hand-rolled bundle walk has to do it itself or the code emitter
+      // trips over an unencodable sub-instruction.
+      if (I->isMetaInstruction())
         continue;
       MCInst *Sub = OutContext.createMCInst();
       LowerTileMachineInstrToMCInst(&*I, *Sub, *this);

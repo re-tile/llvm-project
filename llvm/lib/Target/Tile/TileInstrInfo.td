@@ -4759,7 +4759,7 @@ def : Pat<(addc CPURegs:$src, immSExt16:$imm),
 
 // Memory fence. The legacy `membarrier` SDNode was removed upstream; modern LLVM
 // lowers fences exclusively through `atomic_fence`.
-def : Pat<(atomic_fence (imm), (imm)), (MF)>;
+def : Pat<(atomic_fence (timm), (timm)), (MF)>;
 
 //===----------------------------------------------------------------------===//
 // Intrinsic support for special purpose control instructions

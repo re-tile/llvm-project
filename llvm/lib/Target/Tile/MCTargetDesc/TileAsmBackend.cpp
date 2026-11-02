@@ -80,6 +80,18 @@ public:
     return createTileELFObjectWriter(OSABI);
   }
 
+  // Fold an unsigned LEB128 whose value is a label difference spanning
+  // fragments (as the __gcc_except_table call-site table emits) into an
+  // absolute constant. TILE-Gx has no LEB128 linker relocation, so an
+  // unresolved difference has nowhere to go and must be evaluated here.
+  std::pair<bool, bool> relaxLEB128(MCFragment &F,
+                                    int64_t &Value) const override {
+    if (F.isLEBSigned())
+      return std::make_pair(false, false);
+    return std::make_pair(F.getLEBValue().evaluateKnownAbsolute(Value, *Asm),
+                          false);
+  }
+
   MCFixupKindInfo getFixupKindInfo(MCFixupKind Kind) const override {
     // Must stay in the order of the fixup_* enum in TileFixupKinds.h.
     const static MCFixupKindInfo Infos[Tile::NumTargetFixupKinds] = {

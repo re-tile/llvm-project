@@ -85,6 +85,7 @@ public:
     return getTM<TileTargetMachine>();
   }
 
+  void addIRPasses() override;
   bool addInstSelector() override;
   void addPreSched2() override;
   void addPreEmitPass() override;
@@ -93,6 +94,13 @@ public:
 
 TargetPassConfig *TileTargetMachine::createPassConfig(PassManagerBase &PM) {
   return new TilePassConfig(*this, PM);
+}
+
+void TilePassConfig::addIRPasses() {
+  // Bracket ordered atomic accesses with `mf` fences and lower wide atomics to
+  // libcalls; TILE-Gx has no ordering-carrying load/store form.
+  addPass(createAtomicExpandLegacyPass());
+  TargetPassConfig::addIRPasses();
 }
 
 bool TilePassConfig::addInstSelector() {

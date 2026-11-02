@@ -247,7 +247,44 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
 
   setMinFunctionAlignment(Align(8));
 
-  computeRegisterProperties(Subtarget.getRegisterInfo());
+  // TILE-Gx has no native half-precision support. Treat f16/bf16 as storage
+  // only and soft-promote them to f32 (with __extendhfsf2/__truncsfhf2 libcall
+  // conversions), mirroring the no-Zfh RISC-V path; without this, fp16
+  // conversions fail "Cannot select".
+  for (MVT ValVT : {MVT::f32, MVT::f64}) {
+    setTruncStoreAction(ValVT, MVT::f16, Expand);
+    setLoadExtAction(ISD::EXTLOAD, ValVT, MVT::f16, Expand);
+    setTruncStoreAction(ValVT, MVT::bf16, Expand);
+    setLoadExtAction(ISD::EXTLOAD, ValVT, MVT::bf16, Expand);
+  }
+  for (MVT ValVT : {MVT::f32, MVT::f64}) {
+    setOperationAction(ISD::FP_TO_FP16, ValVT, Expand);
+    setOperationAction(ISD::FP16_TO_FP, ValVT, Expand);
+    setOperationAction(ISD::STRICT_FP_TO_FP16, ValVT, Expand);
+    setOperationAction(ISD::STRICT_FP16_TO_FP, ValVT, Expand);
+  }
+
+  // Atomic load/store have no dedicated instruction: an aligned ld/st is
+  // already atomic, and ordering is supplied by the fences AtomicExpandPass
+  // brackets the access with. Rewrite the atomic node into a plain load/store
+  // (keeping the extension and the atomic memory operand) during legalization.
+  // The action is keyed on the value type: i32 covers the i8/i16/i32 accesses
+  // (their value is promoted to i32) and i64 the doubleword access.
+  for (MVT VT : {MVT::i32, MVT::i64}) {
+    setOperationAction(ISD::ATOMIC_LOAD, VT, Custom);
+    setOperationAction(ISD::ATOMIC_STORE, VT, Custom);
+  }
+
+  // The fetch/exchange/compare-exchange instructions cover atomics up to a
+  // doubleword; without this the AtomicExpandPass libcall-izes every atomic.
+  setMaxAtomicSizeInBitsSupported(64);
+
+  // Wide (i128) shifts are expanded to a pair of doubleword shifts glued by
+  // these nodes; synthesize them from the legal 64-bit shifts and a select.
+  for (unsigned Op : {ISD::SHL_PARTS, ISD::SRL_PARTS, ISD::SRA_PARTS})
+    setOperationAction(Op, MVT::i64, Custom);
+
+computeRegisterProperties(Subtarget.getRegisterInfo());
 }
 
 const char *TileTargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -525,8 +562,150 @@ SDValue TileTargetLowering::LowerOperation(SDValue Op,
     return lowerFABS(Op, DAG);
   case ISD::FCOPYSIGN:
     return lowerFCOPYSIGN(Op, DAG);
+  case ISD::ATOMIC_LOAD:
+    return lowerATOMIC_LOAD(Op, DAG);
+  case ISD::ATOMIC_STORE:
+    return lowerATOMIC_STORE(Op, DAG);
+  case ISD::SHL_PARTS:
+    return lowerShiftLeftParts(Op, DAG);
+  case ISD::SRL_PARTS:
+    return lowerShiftRightParts(Op, DAG, false);
+  case ISD::SRA_PARTS:
+    return lowerShiftRightParts(Op, DAG, true);
   }
   return SDValue();
+}
+
+// The shift-amount operand of the *_PARTS nodes is the target shift-amount type
+// (i32), while the value halves are i64; widen it so all of the synthesized
+// arithmetic happens in the i64 domain.
+SDValue TileTargetLowering::lowerShiftLeftParts(SDValue Op,
+                                                SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  SDValue Lo = Op.getOperand(0);
+  SDValue Hi = Op.getOperand(1);
+  SDValue Shamt = Op.getOperand(2);
+  EVT VT = Lo.getValueType();
+
+  Shamt = DAG.getZExtOrTrunc(Shamt, DL, VT);
+
+  SDValue Zero = DAG.getConstant(0, DL, VT);
+  SDValue One = DAG.getConstant(1, DL, VT);
+  SDValue MinusLen = DAG.getSignedConstant(-64, DL, VT);
+  SDValue LenMinus1 = DAG.getConstant(63, DL, VT);
+  SDValue ShamtMinusLen = DAG.getNode(ISD::ADD, DL, VT, Shamt, MinusLen);
+  SDValue LenMinus1Shamt = DAG.getNode(ISD::SUB, DL, VT, LenMinus1, Shamt);
+
+  SDValue LoTrue = DAG.getNode(ISD::SHL, DL, VT, Lo, Shamt);
+  SDValue ShiftRight1Lo = DAG.getNode(ISD::SRL, DL, VT, Lo, One);
+  SDValue ShiftRightLo =
+      DAG.getNode(ISD::SRL, DL, VT, ShiftRight1Lo, LenMinus1Shamt);
+  SDValue ShiftLeftHi = DAG.getNode(ISD::SHL, DL, VT, Hi, Shamt);
+  SDValue HiTrue = DAG.getNode(ISD::OR, DL, VT, ShiftLeftHi, ShiftRightLo);
+  SDValue HiFalse = DAG.getNode(ISD::SHL, DL, VT, Lo, ShamtMinusLen);
+
+  SDValue CC = DAG.getSetCC(DL, getSetCCResultType(DAG.getDataLayout(),
+                                                   *DAG.getContext(), VT),
+                            ShamtMinusLen, Zero, ISD::SETLT);
+
+  Lo = DAG.getNode(ISD::SELECT, DL, VT, CC, LoTrue, Zero);
+  Hi = DAG.getNode(ISD::SELECT, DL, VT, CC, HiTrue, HiFalse);
+
+  SDValue Parts[2] = {Lo, Hi};
+  return DAG.getMergeValues(Parts, DL);
+}
+
+SDValue TileTargetLowering::lowerShiftRightParts(SDValue Op, SelectionDAG &DAG,
+                                                 bool IsSRA) const {
+  SDLoc DL(Op);
+  SDValue Lo = Op.getOperand(0);
+  SDValue Hi = Op.getOperand(1);
+  SDValue Shamt = Op.getOperand(2);
+  EVT VT = Lo.getValueType();
+
+  Shamt = DAG.getZExtOrTrunc(Shamt, DL, VT);
+
+  unsigned ShiftRightOp = IsSRA ? ISD::SRA : ISD::SRL;
+
+  SDValue Zero = DAG.getConstant(0, DL, VT);
+  SDValue One = DAG.getConstant(1, DL, VT);
+  SDValue MinusLen = DAG.getSignedConstant(-64, DL, VT);
+  SDValue LenMinus1 = DAG.getConstant(63, DL, VT);
+  SDValue ShamtMinusLen = DAG.getNode(ISD::ADD, DL, VT, Shamt, MinusLen);
+  SDValue LenMinus1Shamt = DAG.getNode(ISD::SUB, DL, VT, LenMinus1, Shamt);
+
+  SDValue ShiftRightLo = DAG.getNode(ISD::SRL, DL, VT, Lo, Shamt);
+  SDValue ShiftLeftHi1 = DAG.getNode(ISD::SHL, DL, VT, Hi, One);
+  SDValue ShiftLeftHi =
+      DAG.getNode(ISD::SHL, DL, VT, ShiftLeftHi1, LenMinus1Shamt);
+  SDValue LoTrue = DAG.getNode(ISD::OR, DL, VT, ShiftRightLo, ShiftLeftHi);
+  SDValue HiTrue = DAG.getNode(ShiftRightOp, DL, VT, Hi, Shamt);
+  SDValue LoFalse = DAG.getNode(ShiftRightOp, DL, VT, Hi, ShamtMinusLen);
+  SDValue HiFalse =
+      IsSRA ? DAG.getNode(ISD::SRA, DL, VT, Hi, LenMinus1) : Zero;
+
+  SDValue CC = DAG.getSetCC(DL, getSetCCResultType(DAG.getDataLayout(),
+                                                   *DAG.getContext(), VT),
+                            ShamtMinusLen, Zero, ISD::SETLT);
+
+  Lo = DAG.getNode(ISD::SELECT, DL, VT, CC, LoTrue, LoFalse);
+  Hi = DAG.getNode(ISD::SELECT, DL, VT, CC, HiTrue, HiFalse);
+
+  SDValue Parts[2] = {Lo, Hi};
+  return DAG.getMergeValues(Parts, DL);
+}
+
+SDValue TileTargetLowering::lowerATOMIC_LOAD(SDValue Op,
+                                             SelectionDAG &DAG) const {
+  AtomicSDNode *N = cast<AtomicSDNode>(Op);
+  EVT VT = N->getValueType(0);
+  EVT MemVT = N->getMemoryVT();
+  SDLoc DL(Op);
+
+  if (MemVT == VT)
+    return DAG.getLoad(VT, DL, N->getChain(), N->getBasePtr(),
+                       N->getMemOperand());
+
+  return DAG.getExtLoad(N->getExtensionType(), DL, VT, N->getChain(),
+                        N->getBasePtr(), MemVT, N->getMemOperand());
+}
+
+SDValue TileTargetLowering::lowerATOMIC_STORE(SDValue Op,
+                                              SelectionDAG &DAG) const {
+  AtomicSDNode *N = cast<AtomicSDNode>(Op);
+  EVT MemVT = N->getMemoryVT();
+  SDValue Val = N->getVal();
+  SDLoc DL(Op);
+
+  if (MemVT == Val.getValueType())
+    return DAG.getStore(N->getChain(), DL, Val, N->getBasePtr(),
+                        N->getMemOperand());
+
+  return DAG.getTruncStore(N->getChain(), DL, Val, N->getBasePtr(), MemVT,
+                           N->getMemOperand());
+}
+
+Register TileTargetLowering::getExceptionPointerRegister(
+    const Constant *PersonalityFn) const {
+  return Tile::R12;
+}
+
+Register TileTargetLowering::getExceptionSelectorRegister(
+    const Constant *PersonalityFn) const {
+  return Tile::R13;
+}
+
+TargetLowering::AtomicExpansionKind
+TileTargetLowering::shouldExpandAtomicRMWInIR(const AtomicRMWInst *AI) const {
+  switch (AI->getOperation()) {
+  case AtomicRMWInst::Add:
+  case AtomicRMWInst::And:
+  case AtomicRMWInst::Or:
+  case AtomicRMWInst::Xchg:
+    return AtomicExpansionKind::None;
+  default:
+    return AtomicExpansionKind::CmpXChg;
+  }
 }
 
 SDValue TileTargetLowering::lowerConstantPool(SDValue Op,
@@ -751,6 +930,14 @@ static SDValue performZEXTCombine(SDNode *N, SelectionDAG &DAG) {
   // redundant: rebuild the setcc directly at i64.
   SDValue SetCC = N->getOperand(0);
   if (SetCC.getOpcode() != ISD::SETCC || N->getValueType(0) != MVT::i64)
+    return SDValue();
+
+  // Only fold when the compared operands are a legal type. Forcing the i64
+  // result onto a setcc over an illegal wide type (e.g. i128) makes the generic
+  // wide-integer setcc expansion produce an i32 sub-boolean that no longer
+  // matches this i64 result, tripping ExpandIntOp_SETCC.
+  if (!DAG.getTargetLoweringInfo().isTypeLegal(
+          SetCC.getOperand(0).getValueType()))
     return SDValue();
 
   return DAG.getNode(ISD::SETCC, SDLoc(SetCC), MVT::i64, SetCC.getOperand(0),

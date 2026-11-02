@@ -58,6 +58,27 @@ public:
 
   bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
 
+  // TILE-Gx orders memory only through the explicit `mf` fence, so acquire and
+  // release semantics come from fences the AtomicExpandPass brackets the access
+  // with, leaving the load/store itself relaxed.
+  bool shouldInsertFencesForAtomic(const Instruction *I) const override {
+    return true;
+  }
+
+  // Only fetchadd/fetchand/fetchor/exch exist in hardware; the rest are built
+  // from a compare-exchange loop.
+  AtomicExpansionKind
+  shouldExpandAtomicRMWInIR(const AtomicRMWInst *AI) const override;
+
+  // The libgcc personality routine delivers the exception pointer and type
+  // selector to a landing pad in r12/r13 (EH_RETURN_DATA_REGNO(0,1) in the
+  // tilegx ABI). Naming them here lets SelectionDAGBuilder materialize the
+  // landingpad value instead of leaving it undefined.
+  Register
+  getExceptionPointerRegister(const Constant *PersonalityFn) const override;
+  Register
+  getExceptionSelectorRegister(const Constant *PersonalityFn) const override;
+
   bool isShuffleMaskLegal(ArrayRef<int> M, EVT VT) const override;
 
   unsigned getJumpTableEncoding() const override;
@@ -92,6 +113,10 @@ private:
   SDValue lowerConstantPool(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerFABS(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerATOMIC_LOAD(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerATOMIC_STORE(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerShiftLeftParts(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerShiftRightParts(SDValue Op, SelectionDAG &DAG, bool IsSRA) const;
 
   void passByValArg(SDValue Chain, const SDLoc &dl,
                     SmallVectorImpl<std::pair<unsigned, SDValue>> &RegsToPass,

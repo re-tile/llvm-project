@@ -101,6 +101,15 @@ bool TileVLIWPacketizerList::ignorePseudoInstruction(
 }
 
 bool TileVLIWPacketizerList::isSoloInstruction(const MachineInstr &MI) {
+  // Position-sensitive meta that lowers to a label or CFI directive must break
+  // the packet. The packetizer only skips ignored pseudos without ending the
+  // packet, so anything left between two packetized instructions is swept into
+  // the finalized bundle by finalizeBundle. The bundle emitter cannot encode
+  // such an entry and drops it, which silently deletes an EH call-site label
+  // and leaves the exception table referencing an undefined symbol.
+  if (MI.isEHLabel() || MI.isGCLabel() || MI.isLabel() || MI.isCFIInstruction())
+    return true;
+
   // Keep control flow, calls, inline asm and anything without a real X0/X1
   // encoding in their own bundle. They are correct unpacked, and packing them
   // is both lower value and higher risk.
