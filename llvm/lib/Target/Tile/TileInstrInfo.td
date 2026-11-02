@@ -4487,6 +4487,26 @@ def TBL_#Name : TileTableOp<(outs), (ins),
     [(!cast<Intrinsic>("int_tilegx_"#!tolower(Name)))]>;
 }
 
+// Moves to and from the network registers. The operand is the register's
+// encoding. hasSideEffects keeps sends and receives in program order, which GCC
+// enforces with its fake NETORDER register.
+let hasSideEffects = 1 in {
+def XDN_SEND : TilePseudo<(outs), (ins CPURegs:$rs, i64imm:$net), "", [],
+                          IIC_PSEUDO_ALL>;
+def XDN_RECV : TilePseudo<(outs CPURegs:$rd), (ins i64imm:$net), "", [],
+                          IIC_PSEUDO_ALL>;
+def NET_BARRIER : TilePseudo<(outs), (ins), "", [(int_tilegx_netbarrier)],
+                             IIC_PSEUDO_ALL>;
+}
+def : Pat<(int_tilegx_isend CPURegs:$rs), (XDN_SEND CPURegs:$rs, 57)>;
+def : Pat<(int_tilegx_usend CPURegs:$rs), (XDN_SEND CPURegs:$rs, 59)>;
+def : Pat<(int_tilegx_idn0r), (XDN_RECV 57)>;
+def : Pat<(int_tilegx_idn1r), (XDN_RECV 58)>;
+def : Pat<(int_tilegx_udn0r), (XDN_RECV 59)>;
+def : Pat<(int_tilegx_udn1r), (XDN_RECV 60)>;
+def : Pat<(int_tilegx_udn2r), (XDN_RECV 61)>;
+def : Pat<(int_tilegx_udn3r), (XDN_RECV 62)>;
+
 // Materializes the GOT base in r51 via lnk r50. Placed by emitPrologue after
 // the callee-saved spills and expanded by the asm printer.
 let Defs = [R50, R51], hasSideEffects = 1, isNotDuplicable = 1 in

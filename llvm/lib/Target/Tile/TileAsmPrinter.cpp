@@ -117,6 +117,14 @@ bool TileAsmPrinter::emitSequence(const MachineInstr *MI) {
   };
 
   switch (MI->getOpcode()) {
+  case Tile::XDN_SEND:
+    Emit("move", {MI->getOperand(1).getImm(), Reg(0)});
+    return true;
+  case Tile::XDN_RECV:
+    Emit("move", {Reg(0), MI->getOperand(1).getImm()});
+    return true;
+  case Tile::NET_BARRIER:
+    return true;
   case Tile::CLZ32:
     Emit("shli", {Reg(0), Reg(1), 32});
     Emit("clz", {Reg(0), Reg(0)});
