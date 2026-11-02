@@ -91,18 +91,52 @@ void TileABIInfo::computeInfo(CGFunctionInfo &FI) const {
     Arg.info = classifyType(Arg.type, NumArgGPRs * RegSizeBits);
 }
 
+// GCC's tilegx_gimplify_va_arg_expr. An argument that would straddle or start
+// at __skip, the entry sp, is fetched from past the caller's 16-byte reserve.
+// A type aligned beyond 8 bytes rounds __args up by adding its bit 3, as GCC
+// does.
 RValue TileABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
                               QualType Ty, AggValueSlot Slot) const {
-  CharUnits SlotSize = CharUnits::fromQuantity(8);
-  auto TInfo = getContext().getTypeInfoInChars(Ty);
-  TInfo.Width = std::max(TInfo.Width, CharUnits::fromQuantity(1));
-
-  // Aggregates larger than the ten argument registers are passed indirectly.
+  CGBuilderTy &Builder = CGF.Builder;
   bool IsIndirect =
       isAggregateTypeForABI(Ty) &&
       getContext().getTypeSize(Ty) > NumArgGPRs * RegSizeBits;
-  return emitVoidPtrVAArg(CGF, VAListAddr, Ty, IsIndirect, TInfo, SlotSize,
-                          /*AllowHigherAlign=*/true, Slot);
+  auto TInfo = getContext().getTypeInfoInChars(Ty);
+  CharUnits Size = IsIndirect ? CharUnits::fromQuantity(8) : TInfo.Width;
+  CharUnits RSize = Size.alignTo(CharUnits::fromQuantity(8));
+  if (RSize.isZero())
+    RSize = CharUnits::fromQuantity(8);
+
+  Address ArgsAddr = Builder.CreateStructGEP(VAListAddr, 0, "args_p");
+  Address SkipAddr = Builder.CreateStructGEP(VAListAddr, 1, "skip_p");
+  llvm::Value *Args = Builder.CreateLoad(ArgsAddr, "args");
+  llvm::Value *Skip = Builder.CreateLoad(SkipAddr, "skip");
+
+  if (!IsIndirect && TInfo.Align > CharUnits::fromQuantity(8)) {
+    llvm::Value *Bit = Builder.CreateAnd(
+        Builder.CreatePtrToInt(Args, CGF.IntPtrTy), 8, "align_bit");
+    Args = Builder.CreateGEP(CGF.Int8Ty, Args, Bit, "args_aligned");
+  }
+
+  llvm::Value *End =
+      Builder.CreateGEP(CGF.Int8Ty, Args, CGF.Builder.getInt64(RSize.getQuantity()));
+  llvm::Value *Cross = Builder.CreateAnd(Builder.CreateICmpUGT(End, Skip),
+                                         Builder.CreateICmpULE(Args, Skip));
+  llvm::Value *PastReserve =
+      Builder.CreateGEP(CGF.Int8Ty, Skip, CGF.Builder.getInt64(16));
+  llvm::Value *ArgPtr = Builder.CreateSelect(Cross, PastReserve, Args, "argp");
+  Builder.CreateStore(Builder.CreateGEP(CGF.Int8Ty, ArgPtr,
+                                        CGF.Builder.getInt64(RSize.getQuantity())),
+                      ArgsAddr);
+
+  CharUnits SlotAlign = CharUnits::fromQuantity(8);
+  Address Addr = IsIndirect
+                     ? Address(Builder.CreateLoad(Address(ArgPtr, CGF.DefaultPtrTy,
+                                                          SlotAlign)),
+                               CGF.ConvertTypeForMem(Ty), TInfo.Align)
+                     : Address(ArgPtr, CGF.ConvertTypeForMem(Ty),
+                               std::min(TInfo.Align, SlotAlign));
+  return CGF.EmitLoadOfAnyValue(CGF.MakeAddrLValue(Addr, Ty), Slot);
 }
 
 namespace {

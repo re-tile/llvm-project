@@ -30,6 +30,8 @@ public:
       : TargetInfo(Triple) {
     // TILE-Gx is a little-endian LP64 architecture.
     BigEndian = false;
+    // Braces in inline asm group instructions into one bundle.
+    NoAsmVariants = true;
     LongWidth = LongAlign = 64;
     PointerWidth = PointerAlign = 64;
     IntMaxType = SignedLong;
@@ -57,8 +59,12 @@ public:
 
   llvm::SmallVector<Builtin::InfosShard> getTargetBuiltins() const override;
 
+  int getEHDataRegisterNumber(unsigned RegNo) const override {
+    return RegNo < 4 ? 12 + RegNo : -1;
+  }
+
   BuiltinVaListKind getBuiltinVaListKind() const override {
-    return TargetInfo::VoidPtrBuiltinVaList;
+    return TargetInfo::TileBuiltinVaList;
   }
 
   ArrayRef<const char *> getGCCRegNames() const override;

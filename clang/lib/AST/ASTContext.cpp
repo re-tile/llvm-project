@@ -10399,6 +10399,28 @@ CreateXtensaABIBuiltinVaListDecl(const ASTContext *Context) {
   return VaListTagTypedefDecl;
 }
 
+// GCC's tilegx va_list. __args walks the register save area and the caller's
+// stack, and __skip is the entry sp, where va_arg hops the 16-byte reserve.
+static TypedefDecl *CreateTileBuiltinVaListDecl(const ASTContext *Context) {
+  RecordDecl *VaListTagDecl = Context->buildImplicitRecord("__va_list_tag");
+  VaListTagDecl->startDefinition();
+
+  for (const char *Name : {"__args", "__skip"}) {
+    FieldDecl *Field = FieldDecl::Create(
+        *Context, VaListTagDecl, SourceLocation(), SourceLocation(),
+        &Context->Idents.get(Name), Context->getPointerType(Context->VoidTy),
+        /*TInfo=*/nullptr, /*BitWidth=*/nullptr, /*Mutable=*/false,
+        ICIS_NoInit);
+    Field->setAccess(AS_public);
+    VaListTagDecl->addDecl(Field);
+  }
+  VaListTagDecl->completeDefinition();
+  Context->VaListTagDecl = VaListTagDecl;
+
+  return Context->buildImplicitTypedef(
+      Context->getCanonicalTagType(VaListTagDecl), "__builtin_va_list");
+}
+
 static TypedefDecl *CreateVaListDecl(const ASTContext *Context,
                                      TargetInfo::BuiltinVaListKind Kind) {
   switch (Kind) {
@@ -10420,6 +10442,8 @@ static TypedefDecl *CreateVaListDecl(const ASTContext *Context,
     return CreateHexagonBuiltinVaListDecl(Context);
   case TargetInfo::XtensaABIBuiltinVaList:
     return CreateXtensaABIBuiltinVaListDecl(Context);
+  case TargetInfo::TileBuiltinVaList:
+    return CreateTileBuiltinVaListDecl(Context);
   }
 
   llvm_unreachable("Unhandled __builtin_va_list type kind");
