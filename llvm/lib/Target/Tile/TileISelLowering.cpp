@@ -286,6 +286,9 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   // The fetch/exchange/compare-exchange instructions cover atomics up to a
   // doubleword; without this the AtomicExpandPass libcall-izes every atomic.
   setMaxAtomicSizeInBitsSupported(64);
+  // exch4, fetchadd4 and cmpexch4 are the narrowest forms, so byte and
+  // halfword atomics become masked loops on the containing word.
+  setMinCmpXchgSizeInBits(32);
 
   // Wide (i128) shifts are expanded to a pair of doubleword shifts glued by
   // these nodes; synthesize them from the legal 64-bit shifts and a select.
@@ -750,6 +753,9 @@ Register TileTargetLowering::getExceptionSelectorRegister(
 
 TargetLowering::AtomicExpansionKind
 TileTargetLowering::shouldExpandAtomicRMWInIR(const AtomicRMWInst *AI) const {
+  if (AI->getType()->getPrimitiveSizeInBits() < 32)
+    return AtomicExpansionKind::CmpXChg;
+
   switch (AI->getOperation()) {
   case AtomicRMWInst::Add:
   case AtomicRMWInst::And:
