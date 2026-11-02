@@ -201,6 +201,18 @@ void __clear_cache(void *start, void *end) {
   arg.len = (uintptr_t)end - (uintptr_t)start;
 
   sysarch(RISCV_SYNC_ICACHE, &arg);
+#elif defined(__tilegx__)
+  // Same walk as GCC's tilegx CLEAR_INSN_CACHE. The L1I way covers the
+  // smallest 4 KiB page, so visiting more than 4 KiB revisits lines.
+  const long size = (char *)end - (char *)start;
+  if (size) {
+    const char *line = (const char *)((uintptr_t)start & -64L);
+    const char *last = line + (size < 4096 ? size : 4096) - 1;
+    __asm__ volatile("mf" ::: "memory");
+    for (; line <= last; line += 64)
+      __asm__ volatile("icoh %0" : : "r"(line));
+    __asm__ volatile("drain" ::: "memory");
+  }
 #elif defined(__ve__)
   __asm__ volatile("fencec 2");
 #elif defined(__hexagon__)
