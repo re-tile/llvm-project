@@ -2,7 +2,7 @@
 // RUN: %clang_cc1 -triple tilegx-unknown-linux-gnu -O2 -emit-llvm -o - %s | FileCheck %s
 
 // The clang datalayout must match what the TILE-Gx backend computes.
-// CHECK: target datalayout = "e-m:e-p:64:64-i8:8:32-i16:16:32-i64:64-n32:64-S128"
+// CHECK: target datalayout = "e-m:e-p:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128"
 
 // A small struct is returned in registers, coerced to integer doublewords.
 struct two { long a; long b; };

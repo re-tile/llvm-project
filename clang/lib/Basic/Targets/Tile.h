@@ -44,7 +44,8 @@ public:
     // 128-bit stack alignment and a 64-bit lock-free atomic word.
     SuitableAlign = 128;
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
-    resetDataLayout("e-m:e-p:64:64-i8:8:32-i16:16:32-i64:64-n32:64-S128");
+    resetDataLayout(
+        "e-m:e-p:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128");
   }
 
   void getTargetDefines(const LangOptions &Opts,
