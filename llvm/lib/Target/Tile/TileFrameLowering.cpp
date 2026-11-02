@@ -121,6 +121,10 @@ void TileFrameLowering::emitPrologue(MachineFunction &MF,
         .addReg(TempReg1);
   }
 
+  // The callee-saved spills sit at MBBI, so anything that clobbers a saved
+  // register (the frame pointer, the GOT base) has to land after them.
+  std::advance(MBBI, MFI.getCalleeSavedInfo().size());
+
   for (const CalleeSavedInfo &CSI : MFI.getCalleeSavedInfo()) {
     int64_t Off = MFI.getObjectOffset(CSI.getFrameIdx()) +
                   MFI.getOffsetAdjustment();
@@ -137,6 +141,9 @@ void TileFrameLowering::emitPrologue(MachineFunction &MF,
             MCCFIInstruction::createDefCfaRegister(
                 nullptr, TRI.getDwarfRegNum(Tile::FP, true)));
   }
+
+  if (MF.getInfo<TileFunctionInfo>()->globalBaseRegSet())
+    BuildMI(MBB, MBBI, dl, TII.get(Tile::GOT_SETUP));
 }
 
 void TileFrameLowering::emitEpilogue(MachineFunction &MF,
@@ -194,4 +201,13 @@ void TileFrameLowering::determineCalleeSaves(MachineFunction &MF,
 
   if (hasFP(MF))
     SavedRegs.set(Tile::FP);
+
+  // r49 is the frame-index scratch and r50/r51 the GOT base. Both are written
+  // only after this runs, so the generic def scan cannot see them.
+  if (MF.getFrameInfo().hasStackObjects())
+    SavedRegs.set(Tile::R49);
+  if (MF.getInfo<TileFunctionInfo>()->globalBaseRegSet()) {
+    SavedRegs.set(Tile::R50);
+    SavedRegs.set(Tile::R51);
+  }
 }

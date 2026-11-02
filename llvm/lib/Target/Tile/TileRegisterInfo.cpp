@@ -109,11 +109,17 @@ bool TileRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     FrameIndexOp = &MI.getOperand(FIOperandNum);
   }
 
+  int FrameIndex = FrameIndexOp->getIndex();
+  bool IsCSRSlot = FrameIndex >= MinCSFI && FrameIndex <= MaxCSFI;
+
+  // A callee-saved slot is touched only in the prologue and epilogue, where
+  // r10 is free. r49 itself is one of the registers being saved there.
+  if (IsCSRSlot && Opc != Tile::TileFI)
+    DestReg = Tile::R10;
+
   unsigned StackReg = 0;
   int64_t Offset = 0;
-  int FrameIndex = FrameIndexOp->getIndex();
-
-  if (FrameIndex >= MinCSFI && FrameIndex <= MaxCSFI)
+  if (IsCSRSlot)
     StackReg = Tile::SP;
   else
     StackReg = getFrameRegister(MF);

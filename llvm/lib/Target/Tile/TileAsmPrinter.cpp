@@ -46,7 +46,7 @@ public:
   StringRef getPassName() const override { return "Tile Assembly Printer"; }
 
   void emitInstruction(const MachineInstr *MI) override;
-  void emitFunctionBodyStart() override;
+  void emitGotSetup();
 
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
                        const char *ExtraCode, raw_ostream &O) override;
@@ -70,13 +70,8 @@ char TileAsmPrinter::ID = 0;
 // the difference _GLOBAL_OFFSET_TABLE_ - .Llabel is added back. The plain
 // hw1_last/hw0 operators over a sym - label difference assemble to the PCREL
 // relocations, exactly as GNU as emits them.
-void TileAsmPrinter::emitFunctionBodyStart() {
-  AsmPrinter::emitFunctionBodyStart();
-
+void TileAsmPrinter::emitGotSetup() {
   const auto *FI = MF->getInfo<TileFunctionInfo>();
-  if (!const_cast<TileFunctionInfo *>(FI)->globalBaseRegSet())
-    return;
-
   MCContext &Ctx = OutContext;
   Register GotReg = const_cast<TileFunctionInfo *>(FI)->getGlobalBaseReg();
   Register LnkReg = const_cast<TileFunctionInfo *>(FI)->getLinkReg();
@@ -109,6 +104,11 @@ void TileAsmPrinter::emitFunctionBodyStart() {
 void TileAsmPrinter::emitInstruction(const MachineInstr *MI) {
   if (MI->isDebugInstr())
     return;
+
+  if (MI->getOpcode() == Tile::GOT_SETUP) {
+    emitGotSetup();
+    return;
+  }
 
   // A packetized bundle is emitted as a single BUNDLE MCInst whose operands are
   // the issue-slot sub-instructions. The streamer hands it to the code emitter,

@@ -4451,6 +4451,11 @@ def ADJCALLSTACKUP   : TilePseudo<(outs), (ins i32imm:$amt1, i32imm:$amt2),
                                   [(callseq_end timm:$amt1, timm:$amt2)], IIC_PSEUDO_ALL>;
 }
 
+// Materializes the GOT base in r51 via lnk r50. Placed by emitPrologue after
+// the callee-saved spills and expanded by the asm printer.
+let Defs = [R50, R51], hasSideEffects = 1, isNotDuplicable = 1 in
+def GOT_SETUP : TilePseudo<(outs), (ins), "", [], IIC_PSEUDO_ALL>;
+
 // Tile do not support off(base) addressing mode,
 // we should expand that to
 //

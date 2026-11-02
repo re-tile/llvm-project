@@ -18,9 +18,12 @@ define i64 @f(i64 %a, i64 %b) {
   ret i64 %z
 }
 
-; A frame-pointer function switches the CFA to the frame pointer (r52).
+; A frame-pointer function switches the CFA to the frame pointer (r52). The
+; caller's r52 is spilled before r52 takes the new frame address.
 ; CHECK-LABEL: dynframe:
-; CHECK: .cfi_def_cfa_offset 32
+; CHECK: .cfi_def_cfa_offset 48
+; CHECK: st r10, r52
+; CHECK: add r52, sp, zero
 ; CHECK: .cfi_def_cfa_register 52
 declare void @use(ptr)
 define i64 @dynframe(i64 %n) {
