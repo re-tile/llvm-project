@@ -257,6 +257,9 @@ TileTargetLowering::TileTargetLowering(const TargetMachine &TM,
   setTargetDAGCombine(ISD::SELECT);
   setTargetDAGCombine(ISD::ZERO_EXTEND);
 
+  setOperationAction(ISD::TRAP, MVT::Other, Legal);
+  setOperationAction(ISD::DEBUGTRAP, MVT::Other, Legal);
+
   setMinFunctionAlignment(Align(8));
 
   // TILE-Gx has no native half-precision support. Treat f16/bf16 as storage

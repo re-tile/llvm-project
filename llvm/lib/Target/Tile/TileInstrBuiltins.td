@@ -120,6 +120,9 @@ def TBL_FSINGLE_SUB1 : TileTableOp<(outs CPURegs:$rd), (ins CPURegs:$a0, CPURegs
 let hasSideEffects = 1 in
 def TBL_ILL : TileTableOp<(outs), (ins ),
     [(int_tilegx_ill)]>;
+// GCC's __builtin_trap is ill as well, so no abort() call.
+def : Pat<(trap), (TBL_ILL)>;
+def : Pat<(debugtrap), (TBL_ILL)>;
 let hasSideEffects = 1 in
 def TBL_INFO : TileTableOp<(outs), (ins i64imm:$a0),
     [(int_tilegx_info (i64 imm:$a0))]>;
