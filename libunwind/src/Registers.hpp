@@ -45,6 +45,7 @@ enum {
   REGISTERS_SPARC,
   REGISTERS_SPARC64,
   REGISTERS_HEXAGON,
+  REGISTERS_TILEGX,
   REGISTERS_RISCV,
   REGISTERS_VE,
   REGISTERS_S390X,
@@ -4015,6 +4016,125 @@ inline const char *Registers_sparc64::getRegisterName(int regNum) {
   }
 }
 #endif // _LIBUNWIND_TARGET_SPARC64
+
+#if defined(_LIBUNWIND_TARGET_TILEGX)
+/// Registers_tilegx holds the register state of a thread in a TILE-Gx
+/// process: r0-r55 and the pc. r56-r62 are network ports and r63 reads zero.
+class _LIBUNWIND_HIDDEN Registers_tilegx {
+public:
+  Registers_tilegx();
+  Registers_tilegx(const void *registers);
+
+  typedef uint64_t reg_t;
+  typedef uint64_t link_reg_t;
+  typedef const link_reg_t &link_hardened_reg_arg_t;
+
+  bool        validRegister(int num) const;
+  uint64_t    getRegister(int num) const;
+  void        setRegister(int num, uint64_t value);
+  bool        validFloatRegister(int) const { return false; }
+  double      getFloatRegister(int) const;
+  void        setFloatRegister(int, double);
+  bool        validVectorRegister(int) const { return false; }
+  v128        getVectorRegister(int) const;
+  void        setVectorRegister(int, v128);
+  static const char *getRegisterName(int num);
+  void        jumpto();
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_TILEGX;
+  }
+  static int  getArch() { return REGISTERS_TILEGX; }
+
+  uint64_t  getSP() const         { return _registers.__r[UNW_TILEGX_R54]; }
+  void      setSP(uint64_t value) { _registers.__r[UNW_TILEGX_R54] = value; }
+  uint64_t  getIP() const         { return _registers.__pc; }
+  void      setIP(uint64_t value) { _registers.__pc = value; }
+
+private:
+  // UnwindRegistersSave.S and UnwindRegistersRestore.S walk this layout.
+  struct tilegx_thread_state_t {
+    uint64_t __r[56];
+    uint64_t __pc;
+  };
+
+  tilegx_thread_state_t _registers;
+};
+
+inline Registers_tilegx::Registers_tilegx(const void *registers) {
+  static_assert((check_fit<Registers_tilegx, unw_context_t>::does_fit),
+                "tilegx registers do not fit into unw_context_t");
+  memcpy(&_registers, registers, sizeof(_registers));
+}
+
+inline Registers_tilegx::Registers_tilegx() {
+  memset(&_registers, 0, sizeof(_registers));
+}
+
+inline bool Registers_tilegx::validRegister(int regNum) const {
+  if (regNum == UNW_REG_IP || regNum == UNW_REG_SP)
+    return true;
+  return regNum >= UNW_TILEGX_R0 && regNum <= UNW_TILEGX_R55;
+}
+
+inline uint64_t Registers_tilegx::getRegister(int regNum) const {
+  if (regNum >= UNW_TILEGX_R0 && regNum <= UNW_TILEGX_R55)
+    return _registers.__r[regNum];
+  if (regNum == UNW_REG_IP)
+    return _registers.__pc;
+  if (regNum == UNW_REG_SP)
+    return _registers.__r[UNW_TILEGX_R54];
+  _LIBUNWIND_ABORT("unsupported tilegx register");
+}
+
+inline void Registers_tilegx::setRegister(int regNum, uint64_t value) {
+  if (regNum >= UNW_TILEGX_R0 && regNum <= UNW_TILEGX_R55) {
+    _registers.__r[regNum] = value;
+    return;
+  }
+  if (regNum == UNW_REG_IP) {
+    _registers.__pc = value;
+    return;
+  }
+  if (regNum == UNW_REG_SP) {
+    _registers.__r[UNW_TILEGX_R54] = value;
+    return;
+  }
+  _LIBUNWIND_ABORT("unsupported tilegx register");
+}
+
+inline double Registers_tilegx::getFloatRegister(int) const {
+  _LIBUNWIND_ABORT("tilegx has no float registers");
+}
+
+inline void Registers_tilegx::setFloatRegister(int, double) {
+  _LIBUNWIND_ABORT("tilegx has no float registers");
+}
+
+inline v128 Registers_tilegx::getVectorRegister(int) const {
+  _LIBUNWIND_ABORT("tilegx has no vector registers");
+}
+
+inline void Registers_tilegx::setVectorRegister(int, v128) {
+  _LIBUNWIND_ABORT("tilegx has no vector registers");
+}
+
+inline const char *Registers_tilegx::getRegisterName(int regNum) {
+  static const char *const Names[] = {
+      "r0",  "r1",  "r2",  "r3",  "r4",  "r5",  "r6",  "r7",  "r8",  "r9",
+      "r10", "r11", "r12", "r13", "r14", "r15", "r16", "r17", "r18", "r19",
+      "r20", "r21", "r22", "r23", "r24", "r25", "r26", "r27", "r28", "r29",
+      "r30", "r31", "r32", "r33", "r34", "r35", "r36", "r37", "r38", "r39",
+      "r40", "r41", "r42", "r43", "r44", "r45", "r46", "r47", "r48", "r49",
+      "r50", "r51", "r52", "tp",  "sp",  "lr"};
+  if (regNum == UNW_REG_IP)
+    return "pc";
+  if (regNum == UNW_REG_SP)
+    return "sp";
+  if (regNum >= UNW_TILEGX_R0 && regNum <= UNW_TILEGX_R55)
+    return Names[regNum];
+  return "unknown register";
+}
+#endif // _LIBUNWIND_TARGET_TILEGX
 
 #if defined(_LIBUNWIND_TARGET_HEXAGON)
 /// Registers_hexagon holds the register state of a thread in a Hexagon QDSP6

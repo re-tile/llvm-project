@@ -945,6 +945,79 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind14Registers_or1k6jumptoEv)
   l.jr     r9
    l.nop
 
+#elif defined(__tilegx__)
+
+DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind16Registers_tilegx6jumptoEv)
+#
+# void libunwind::Registers_tilegx::jumpto()
+#
+# On entry:
+#  thread_state pointer is in r0
+#
+# lr takes the saved pc and is the jump target, as ra is on RISC-V. r1..r54
+# load through r0 as it walks the slots, and r0 itself loads last.
+#
+  addli r1, r0, 448
+  ld lr, r1
+  addi r0, r0, 8
+  ld_add r1, r0, 8
+  ld_add r2, r0, 8
+  ld_add r3, r0, 8
+  ld_add r4, r0, 8
+  ld_add r5, r0, 8
+  ld_add r6, r0, 8
+  ld_add r7, r0, 8
+  ld_add r8, r0, 8
+  ld_add r9, r0, 8
+  ld_add r10, r0, 8
+  ld_add r11, r0, 8
+  ld_add r12, r0, 8
+  ld_add r13, r0, 8
+  ld_add r14, r0, 8
+  ld_add r15, r0, 8
+  ld_add r16, r0, 8
+  ld_add r17, r0, 8
+  ld_add r18, r0, 8
+  ld_add r19, r0, 8
+  ld_add r20, r0, 8
+  ld_add r21, r0, 8
+  ld_add r22, r0, 8
+  ld_add r23, r0, 8
+  ld_add r24, r0, 8
+  ld_add r25, r0, 8
+  ld_add r26, r0, 8
+  ld_add r27, r0, 8
+  ld_add r28, r0, 8
+  ld_add r29, r0, 8
+  ld_add r30, r0, 8
+  ld_add r31, r0, 8
+  ld_add r32, r0, 8
+  ld_add r33, r0, 8
+  ld_add r34, r0, 8
+  ld_add r35, r0, 8
+  ld_add r36, r0, 8
+  ld_add r37, r0, 8
+  ld_add r38, r0, 8
+  ld_add r39, r0, 8
+  ld_add r40, r0, 8
+  ld_add r41, r0, 8
+  ld_add r42, r0, 8
+  ld_add r43, r0, 8
+  ld_add r44, r0, 8
+  ld_add r45, r0, 8
+  ld_add r46, r0, 8
+  ld_add r47, r0, 8
+  ld_add r48, r0, 8
+  ld_add r49, r0, 8
+  ld_add r50, r0, 8
+  ld_add r51, r0, 8
+  ld_add r52, r0, 8
+  ld_add r53, r0, 8
+  ld_add r54, r0, 8
+  addli r0, r0, -440
+  ld r0, r0
+  jr lr
+
 #elif defined(__hexagon__)
 # On entry:
 #  thread_state pointer is in r0

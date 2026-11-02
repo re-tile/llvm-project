@@ -1096,6 +1096,78 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
   # zero epcr
   l.sw     132(r3), r0
 
+#elif defined(__tilegx__)
+
+#
+# extern int __unw_getcontext(unw_context_t* thread_state)
+#
+# On entry:
+#  thread_state pointer is in r0
+#
+# TILE-Gx stores only through a bare address register, so r0 walks the
+# tilegx_thread_state_t slots r0..r55 and then the pc, which is lr.
+#
+DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+  st_add r0, r0, 8
+  st_add r0, r1, 8
+  st_add r0, r2, 8
+  st_add r0, r3, 8
+  st_add r0, r4, 8
+  st_add r0, r5, 8
+  st_add r0, r6, 8
+  st_add r0, r7, 8
+  st_add r0, r8, 8
+  st_add r0, r9, 8
+  st_add r0, r10, 8
+  st_add r0, r11, 8
+  st_add r0, r12, 8
+  st_add r0, r13, 8
+  st_add r0, r14, 8
+  st_add r0, r15, 8
+  st_add r0, r16, 8
+  st_add r0, r17, 8
+  st_add r0, r18, 8
+  st_add r0, r19, 8
+  st_add r0, r20, 8
+  st_add r0, r21, 8
+  st_add r0, r22, 8
+  st_add r0, r23, 8
+  st_add r0, r24, 8
+  st_add r0, r25, 8
+  st_add r0, r26, 8
+  st_add r0, r27, 8
+  st_add r0, r28, 8
+  st_add r0, r29, 8
+  st_add r0, r30, 8
+  st_add r0, r31, 8
+  st_add r0, r32, 8
+  st_add r0, r33, 8
+  st_add r0, r34, 8
+  st_add r0, r35, 8
+  st_add r0, r36, 8
+  st_add r0, r37, 8
+  st_add r0, r38, 8
+  st_add r0, r39, 8
+  st_add r0, r40, 8
+  st_add r0, r41, 8
+  st_add r0, r42, 8
+  st_add r0, r43, 8
+  st_add r0, r44, 8
+  st_add r0, r45, 8
+  st_add r0, r46, 8
+  st_add r0, r47, 8
+  st_add r0, r48, 8
+  st_add r0, r49, 8
+  st_add r0, r50, 8
+  st_add r0, r51, 8
+  st_add r0, r52, 8
+  st_add r0, r53, 8
+  st_add r0, r54, 8
+  st_add r0, r55, 8
+  st r0, lr
+  move r0, zero
+  jrp lr
+
 #elif defined(__hexagon__)
 #
 # extern int unw_getcontext(unw_context_t* thread_state)
