@@ -9,6 +9,7 @@
 #include "MCTargetDesc/TileFixupKinds.h"
 #include "MCTargetDesc/TileMCTargetDesc.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCELFObjectWriter.h"
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCObjectWriter.h"
@@ -38,106 +39,75 @@ TileELFObjectWriter::TileELFObjectWriter(uint8_t OSABI)
     : MCELFObjectTargetWriter(/*Is64Bit=*/true, OSABI, ELF::EM_TILEGX,
                               /*HasRelocationAddend=*/true) {}
 
-static unsigned getFixupRelocType(const MCFixup &Fixup, bool IsPCRel) {
-  switch (Fixup.getKind()) {
+static bool isTlsReloc(unsigned Type) {
+  using namespace ELF;
+  switch (Type) {
+  case R_TILEGX_IMM16_X0_HW0_TLS_GD:
+  case R_TILEGX_IMM16_X1_HW0_TLS_GD:
+  case R_TILEGX_IMM16_X0_HW0_TLS_LE:
+  case R_TILEGX_IMM16_X1_HW0_TLS_LE:
+  case R_TILEGX_IMM16_X0_HW0_LAST_TLS_LE:
+  case R_TILEGX_IMM16_X1_HW0_LAST_TLS_LE:
+  case R_TILEGX_IMM16_X0_HW1_LAST_TLS_LE:
+  case R_TILEGX_IMM16_X1_HW1_LAST_TLS_LE:
+  case R_TILEGX_IMM16_X0_HW0_LAST_TLS_GD:
+  case R_TILEGX_IMM16_X1_HW0_LAST_TLS_GD:
+  case R_TILEGX_IMM16_X0_HW1_LAST_TLS_GD:
+  case R_TILEGX_IMM16_X1_HW1_LAST_TLS_GD:
+  case R_TILEGX_IMM16_X0_HW0_TLS_IE:
+  case R_TILEGX_IMM16_X1_HW0_TLS_IE:
+  case R_TILEGX_IMM16_X0_HW0_LAST_TLS_IE:
+  case R_TILEGX_IMM16_X1_HW0_LAST_TLS_IE:
+  case R_TILEGX_IMM16_X0_HW1_LAST_TLS_IE:
+  case R_TILEGX_IMM16_X1_HW1_LAST_TLS_IE:
+    return true;
   default:
-    llvm_unreachable("invalid fixup kind!");
-  case FK_Data_1:
-    return IsPCRel ? ELF::R_TILEGX_8_PCREL : ELF::R_TILEGX_8;
-  case FK_Data_2:
-    return IsPCRel ? ELF::R_TILEGX_16_PCREL : ELF::R_TILEGX_16;
-  case FK_Data_4:
-    return IsPCRel ? ELF::R_TILEGX_32_PCREL : ELF::R_TILEGX_32;
-  case FK_Data_8:
-    return IsPCRel ? ELF::R_TILEGX_64_PCREL : ELF::R_TILEGX_64;
-  case Tile::fixup_Tile_X0_HW0:
-    return ELF::R_TILEGX_IMM16_X0_HW0;
-  case Tile::fixup_Tile_X1_HW0:
-    return ELF::R_TILEGX_IMM16_X1_HW0;
-  case Tile::fixup_Tile_X0_HW0_PCREL:
-    return ELF::R_TILEGX_IMM16_X0_HW0_PCREL;
-  case Tile::fixup_Tile_X1_HW0_PCREL:
-    return ELF::R_TILEGX_IMM16_X1_HW0_PCREL;
-  case Tile::fixup_Tile_X0_HW0_GOT:
-    return ELF::R_TILEGX_IMM16_X0_HW0_GOT;
-  case Tile::fixup_Tile_X1_HW0_GOT:
-    return ELF::R_TILEGX_IMM16_X1_HW0_GOT;
-  case Tile::fixup_Tile_X0_HW1:
-    return ELF::R_TILEGX_IMM16_X0_HW1;
-  case Tile::fixup_Tile_X1_HW1:
-    return ELF::R_TILEGX_IMM16_X1_HW1;
-  case Tile::fixup_Tile_X0_HW1_PCREL:
-    return ELF::R_TILEGX_IMM16_X0_HW1_PCREL;
-  case Tile::fixup_Tile_X1_HW1_PCREL:
-    return ELF::R_TILEGX_IMM16_X1_HW1_PCREL;
-  case Tile::fixup_Tile_X0_HW1_LAST:
-    return ELF::R_TILEGX_IMM16_X0_HW1_LAST;
-  case Tile::fixup_Tile_X1_HW1_LAST:
-    return ELF::R_TILEGX_IMM16_X1_HW1_LAST;
-  case Tile::fixup_Tile_X0_HW1_LAST_PCREL:
-    return ELF::R_TILEGX_IMM16_X0_HW1_LAST_PCREL;
-  case Tile::fixup_Tile_X1_HW1_LAST_PCREL:
-    return ELF::R_TILEGX_IMM16_X1_HW1_LAST_PCREL;
-  case Tile::fixup_Tile_X0_HW1_LAST_GOT:
-    return ELF::R_TILEGX_IMM16_X0_HW1_LAST_GOT;
-  case Tile::fixup_Tile_X1_HW1_LAST_GOT:
-    return ELF::R_TILEGX_IMM16_X1_HW1_LAST_GOT;
-  case Tile::fixup_Tile_X0_HW2_LAST:
-    return ELF::R_TILEGX_IMM16_X0_HW2_LAST;
-  case Tile::fixup_Tile_X1_HW2_LAST:
-    return ELF::R_TILEGX_IMM16_X1_HW2_LAST;
-  case Tile::fixup_Tile_X1_JUMPOFF:
-    return ELF::R_TILEGX_JUMPOFF_X1;
-  case Tile::fixup_Tile_X1_JUMPOFF_PLT:
-    return ELF::R_TILEGX_JUMPOFF_X1_PLT;
-  case Tile::fixup_Tile_X1_BROFF:
-    return ELF::R_TILEGX_BROFF_X1;
-  case Tile::fixup_Tile_X1_HW0_TLS_GD:
-    return ELF::R_TILEGX_IMM16_X1_HW0_TLS_GD;
-  case Tile::fixup_Tile_X1_HW1_LAST_TLS_GD:
-    return ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_GD;
-  case Tile::fixup_Tile_X1_HW0_TLS_IE:
-    return ELF::R_TILEGX_IMM16_X1_HW0_TLS_IE;
-  case Tile::fixup_Tile_X1_HW1_LAST_TLS_IE:
-    return ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_IE;
-  case Tile::fixup_Tile_X1_HW0_TLS_LE:
-    return ELF::R_TILEGX_IMM16_X1_HW0_TLS_LE;
-  case Tile::fixup_Tile_X1_HW1_LAST_TLS_LE:
-    return ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_LE;
-  case Tile::fixup_Tile_X1_TLS_GD_CALL:
-    return ELF::R_TILEGX_TLS_GD_CALL;
-  case Tile::fixup_Tile_X1_TLS_GD_ADD:
-    return ELF::R_TILEGX_IMM8_X1_TLS_GD_ADD;
-  case Tile::fixup_Tile_X1_TLS_ADD:
-    return ELF::R_TILEGX_IMM8_X1_TLS_ADD;
-  case Tile::fixup_Tile_X1_TLS_IE_LOAD:
-    return ELF::R_TILEGX_TLS_IE_LOAD;
+    return Type >= R_TILEGX_TLS_GD_CALL && Type <= R_TILEGX_IMM8_Y1_TLS_ADD;
   }
 }
 
-// The linker only accepts a TLS relocation against an STT_TLS symbol, and an
+// A plain halfword relocation over sym - label, with the label in the fixup's
+// section, reaches here PC-relative and takes the matching _PCREL type, which
+// is how tile-as spells the GOT-base and _start address computations. The
+// linker only accepts a TLS relocation against an STT_TLS symbol, and an
 // undefined TLS variable gets that type only from the relocations against it.
 unsigned TileELFObjectWriter::getRelocType(const MCFixup &Fixup,
                                            const MCValue &Target,
                                            bool IsPCRel) const {
-  unsigned Type = getFixupRelocType(Fixup, IsPCRel);
-  switch (Type) {
-  case ELF::R_TILEGX_IMM16_X1_HW0_TLS_GD:
-  case ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_GD:
-  case ELF::R_TILEGX_IMM16_X1_HW0_TLS_IE:
-  case ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_IE:
-  case ELF::R_TILEGX_IMM16_X1_HW0_TLS_LE:
-  case ELF::R_TILEGX_IMM16_X1_HW1_LAST_TLS_LE:
-  case ELF::R_TILEGX_TLS_GD_CALL:
-  case ELF::R_TILEGX_IMM8_X1_TLS_GD_ADD:
-  case ELF::R_TILEGX_IMM8_X1_TLS_ADD:
-  case ELF::R_TILEGX_TLS_IE_LOAD:
-    if (auto *Sym = const_cast<MCSymbol *>(Target.getAddSym()))
-      static_cast<MCSymbolELF *>(Sym)->setType(ELF::STT_TLS);
-    break;
+  using namespace ELF;
+  switch (Fixup.getKind()) {
+  case FK_Data_1:
+    return IsPCRel ? R_TILEGX_8_PCREL : R_TILEGX_8;
+  case FK_Data_2:
+    return IsPCRel ? R_TILEGX_16_PCREL : R_TILEGX_16;
+  case FK_Data_4:
+    return IsPCRel ? R_TILEGX_32_PCREL : R_TILEGX_32;
+  case FK_Data_8:
+    return IsPCRel ? R_TILEGX_64_PCREL : R_TILEGX_64;
   default:
     break;
   }
+  assert(Fixup.getKind() >= FirstTargetFixupKind && "invalid fixup kind");
+
+  unsigned Type = Tile::getFixupReloc(Fixup.getKind());
+  if (IsPCRel && !Fixup.isPCRel()) {
+    if (Type >= R_TILEGX_IMM16_X0_HW0 && Type <= R_TILEGX_IMM16_X1_HW2_LAST)
+      Type += R_TILEGX_IMM16_X0_HW0_PCREL - R_TILEGX_IMM16_X0_HW0;
+    else if (!(Type >= R_TILEGX_IMM16_X0_HW0_PCREL &&
+               Type <= R_TILEGX_IMM16_X1_HW2_LAST_PCREL) &&
+             !(Type >= R_TILEGX_IMM16_X0_HW0_PLT_PCREL &&
+               Type <= R_TILEGX_IMM16_X1_HW2_PLT_PCREL) &&
+             !(Type >= R_TILEGX_IMM16_X0_HW0_LAST_PLT_PCREL &&
+               Type <= R_TILEGX_IMM16_X1_HW2_LAST_PLT_PCREL) &&
+             Type != R_TILEGX_IMM16_X0_HW3_PLT_PCREL &&
+             Type != R_TILEGX_IMM16_X1_HW3_PLT_PCREL)
+      getContext().reportError(Fixup.getLoc(),
+                               "relocation has no PC-relative form");
+  }
+
+  if (isTlsReloc(Type))
+    if (auto *Sym = const_cast<MCSymbol *>(Target.getAddSym()))
+      static_cast<MCSymbolELF *>(Sym)->setType(STT_TLS);
   return Type;
 }
 

@@ -5,6 +5,7 @@ add_llvm_component_library(LLVMTileDesc
   TileMCAsmInfo.cpp
   TileMCCodeEmitter.cpp
   TileMCTargetDesc.cpp
+  TileOpcodeTable.cpp
 
   LINK_COMPONENTS
   MC

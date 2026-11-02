@@ -12,6 +12,7 @@
 
 #include "MCTargetDesc/TileFixupKinds.h"
 #include "MCTargetDesc/TileMCTargetDesc.h"
+#include "MCTargetDesc/TileOpcodeTable.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
@@ -22,31 +23,34 @@
 #include "llvm/MC/MCValue.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 #include <cstdint>
 
 using namespace llvm;
 
-// Place a resolved Value into the bitfield the fixup targets within the 64-bit
-// bundle. The shifts mirror the TILE-Gx X1 pipe layout in binutils' howto
-// tables (elfxx-tilegx.c); the unhandled kinds are deferred relocations.
-static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value) {
-  switch (Fixup.getKind()) {
+// GOT, PLT and TLS relocations name a linker-built slot or sequence, so they
+// stay relocations even when the symbol is local and defined here.
+static bool forcesRelocation(unsigned Type) {
+  using namespace ELF;
+  switch (Type) {
+  case R_TILEGX_JUMPOFF_X1_PLT:
+  case R_TILEGX_IMM16_X0_HW0_GOT:
+  case R_TILEGX_IMM16_X1_HW0_GOT:
+  case R_TILEGX_IMM16_X0_HW0_LAST_GOT:
+  case R_TILEGX_IMM16_X1_HW0_LAST_GOT:
+  case R_TILEGX_IMM16_X0_HW1_LAST_GOT:
+  case R_TILEGX_IMM16_X1_HW1_LAST_GOT:
+    return true;
   default:
-    return 0;
-  case FK_Data_1:
-  case FK_Data_2:
-  case FK_Data_4:
-  case FK_Data_8:
-    return Value;
-  case Tile::fixup_Tile_X1_JUMPOFF: {
-    uint64_t Adj = Value >> 3;
-    return (Adj & 0x7FFFFFF) << 31;
+    break;
   }
-  case Tile::fixup_Tile_X1_BROFF: {
-    uint64_t Adj = Value >> 3;
-    return ((Adj & 0x3F) << 31) | (((Adj & (0x7FFULL << 6)) >> 6) << 43);
-  }
-  }
+  if (Type >= R_TILEGX_IMM16_X0_HW0_PLT_PCREL &&
+      Type <= R_TILEGX_IMM16_X1_HW2_PLT_PCREL)
+    return true;
+  if (Type >= R_TILEGX_IMM16_X0_HW3_PLT_PCREL &&
+      Type <= R_TILEGX_IMM16_X1_HW1_LAST_TLS_IE)
+    return true;
+  return Type >= R_TILEGX_TLS_DTPMOD64 && Type <= R_TILEGX_IMM8_Y1_TLS_ADD;
 }
 
 namespace {
@@ -61,18 +65,34 @@ public:
   void applyFixup(const MCFragment &F, const MCFixup &Fixup,
                   const MCValue &Target, uint8_t *Data, uint64_t Value,
                   bool IsResolved) override {
+    MCFixupKind Kind = Fixup.getKind();
+    bool IsTarget = Kind >= FirstTargetFixupKind;
+    if (IsTarget && forcesRelocation(Tile::getFixupReloc(Kind)))
+      IsResolved = false;
     maybeAddReloc(F, Fixup, Target, Value, IsResolved);
-    Value = adjustFixupValue(Fixup, Value);
-    if (!Value)
+    if (!IsResolved)
       return;
 
-    // Data already points at the fixup location. Bundle fixups merge into all
-    // eight bytes of the bundle, data fixups only into their own width.
-    unsigned NumBytes = Fixup.getKind() < FirstTargetFixupKind
-                            ? getFixupKindInfo(Fixup.getKind()).TargetSize / 8
-                            : 8;
-    for (unsigned I = 0; I != NumBytes; ++I)
-      Data[I] |= uint8_t((Value >> (I * 8)) & 0xff);
+    if (!IsTarget) {
+      unsigned NumBytes = getFixupKindInfo(Kind).TargetSize / 8;
+      for (unsigned I = 0; I != NumBytes; ++I)
+        Data[I] |= uint8_t(Value >> (I * 8));
+      return;
+    }
+
+    std::optional<TileISA::RelocField> Where =
+        TileISA::relocField(Tile::getFixupReloc(Kind));
+    if (!Where)
+      return;
+    const TileISA::Field &Field = TileISA::field(Where->FieldId);
+    if (Where->ValueShift == 3 &&
+        !isIntN(Field.NumChunks == 1 ? 27 : 17, int64_t(Value) >> 3)) {
+      getContext().reportError(Fixup.getLoc(), "branch target out of range");
+      return;
+    }
+    uint64_t Bits = TileISA::insertField(Field, Value >> Where->ValueShift);
+    for (unsigned I = 0; I != 8; ++I)
+      Data[I] |= uint8_t(Bits >> (I * 8));
   }
 
   std::unique_ptr<MCObjectTargetWriter>
@@ -93,47 +113,9 @@ public:
   }
 
   MCFixupKindInfo getFixupKindInfo(MCFixupKind Kind) const override {
-    // Must stay in the order of the fixup_* enum in TileFixupKinds.h.
-    const static MCFixupKindInfo Infos[Tile::NumTargetFixupKinds] = {
-        {"fixup_Tile_X0_HW0", 0, 16, 0},
-        {"fixup_Tile_X1_HW0", 0, 16, 0},
-        {"fixup_Tile_X0_HW0_PCREL", 0, 16, 0},
-        {"fixup_Tile_X1_HW0_PCREL", 0, 16, 0},
-        {"fixup_Tile_X0_HW0_GOT", 0, 16, 0},
-        {"fixup_Tile_X1_HW0_GOT", 0, 16, 0},
-        {"fixup_Tile_X0_HW1", 0, 16, 0},
-        {"fixup_Tile_X1_HW1", 0, 16, 0},
-        {"fixup_Tile_X0_HW1_PCREL", 0, 16, 0},
-        {"fixup_Tile_X1_HW1_PCREL", 0, 16, 0},
-        {"fixup_Tile_X0_HW1_LAST", 0, 16, 0},
-        {"fixup_Tile_X1_HW1_LAST", 0, 16, 0},
-        {"fixup_Tile_X0_HW1_LAST_PCREL", 0, 16, 0},
-        {"fixup_Tile_X1_HW1_LAST_PCREL", 0, 16, 0},
-        {"fixup_Tile_X0_HW1_LAST_GOT", 0, 16, 0},
-        {"fixup_Tile_X1_HW1_LAST_GOT", 0, 16, 0},
-        {"fixup_Tile_X0_HW2_LAST", 0, 16, 0},
-        {"fixup_Tile_X1_HW2_LAST", 0, 16, 0},
-        {"fixup_Tile_X1_JUMPOFF", 31, 27, 0},
-        {"fixup_Tile_X1_JUMPOFF_PLT", 31, 27, 0},
-        {"fixup_Tile_X1_BROFF", 31, 17, 0},
-        {"fixup_Tile_X1_HW0_TLS_GD", 31, 16, 0},
-        {"fixup_Tile_X1_HW1_LAST_TLS_GD", 31, 16, 0},
-        {"fixup_Tile_X1_HW0_TLS_IE", 31, 16, 0},
-        {"fixup_Tile_X1_HW1_LAST_TLS_IE", 31, 16, 0},
-        {"fixup_Tile_X1_HW0_TLS_LE", 31, 16, 0},
-        {"fixup_Tile_X1_HW1_LAST_TLS_LE", 31, 16, 0},
-        {"fixup_Tile_X1_TLS_GD_CALL", 31, 27, 0},
-        {"fixup_Tile_X1_TLS_GD_ADD", 31, 8, 0},
-        {"fixup_Tile_X1_TLS_ADD", 31, 8, 0},
-        {"fixup_Tile_X1_TLS_IE_LOAD", 31, 8, 0},
-    };
-
     if (Kind < FirstTargetFixupKind)
       return MCAsmBackend::getFixupKindInfo(Kind);
-
-    assert(unsigned(Kind - FirstTargetFixupKind) < Tile::NumTargetFixupKinds &&
-           "Invalid kind!");
-    return Infos[Kind - FirstTargetFixupKind];
+    return {"fixup_tile", 0, 64, 0};
   }
 
   bool writeNopData(raw_ostream &OS, uint64_t Count,

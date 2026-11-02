@@ -38,6 +38,7 @@ private:
                     raw_ostream &O);
   void printUnsignedImm(const MCInst *MI, int opNum, raw_ostream &O);
   void printS16ImmOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printTableInst(const MCInst *MI, raw_ostream &O);
   bool printPICLNKReg(const MCInst *MI, unsigned opNum, raw_ostream &OS);
 };
 

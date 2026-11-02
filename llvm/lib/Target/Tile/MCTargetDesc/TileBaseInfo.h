@@ -55,7 +55,19 @@ enum TOF {
   MO_HW0_TLS_LE,
   MO_HW1_LAST_TLS_GD,
   MO_HW1_LAST_TLS_IE,
-  MO_HW1_LAST_TLS_LE
+  MO_HW1_LAST_TLS_LE,
+
+  // Operators only hand-written assembly uses.
+  MO_HW2,
+  MO_HW3,
+  MO_HW0_LAST_GOT,
+  MO_HW0_LAST_TLS_GD,
+  MO_HW0_LAST_TLS_IE,
+  MO_HW0_LAST_TLS_LE,
+  MO_HW0_PLT,
+  MO_HW1_PLT,
+  MO_HW1_LAST_PLT,
+  MO_HW2_LAST_PLT
 };
 
 // Tile instruction encoding formats.
@@ -264,33 +276,6 @@ enum TileSlotType {
 };
 }
 
-inline static std::pair<const MCSymbolRefExpr *, int64_t>
-TileGetSymAndOffset(const MCFixup &Fixup) {
-  MCFixupKind FixupKind = Fixup.getKind();
-
-  if ((FixupKind < FirstTargetFixupKind) ||
-      (FixupKind >= MCFixupKind(Tile::LastTargetFixupKind)))
-    return std::make_pair((const MCSymbolRefExpr *)0, (int64_t) 0);
-
-  const MCExpr *Expr = Fixup.getValue();
-  MCExpr::ExprKind Kind = Expr->getKind();
-
-  if (Kind == MCExpr::Binary) {
-    const MCBinaryExpr *BE = static_cast<const MCBinaryExpr *>(Expr);
-    const MCExpr *LHS = BE->getLHS();
-    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(BE->getRHS());
-
-    if ((LHS->getKind() != MCExpr::SymbolRef) || !CE)
-      return std::make_pair((const MCSymbolRefExpr *)0, (int64_t) 0);
-
-    return std::make_pair(cast<MCSymbolRefExpr>(LHS), CE->getValue());
-  }
-
-  if (Kind != MCExpr::SymbolRef)
-    return std::make_pair((const MCSymbolRefExpr *)0, (int64_t) 0);
-
-  return std::make_pair(cast<MCSymbolRefExpr>(Expr), 0);
-}
 }
 
 #endif

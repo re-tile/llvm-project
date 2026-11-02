@@ -12,6 +12,7 @@
 
 #include "TileInstPrinter.h"
 #include "TileMCTargetDesc.h"
+#include "TileOpcodeTable.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
@@ -30,12 +31,45 @@ void TileInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) {
   OS << StringRef(getRegisterName(Reg)).lower();
 }
 
+static std::string tableRegisterName(int64_t N) {
+  static const char *const Named[] = {"tp",   "sp",   "lr",   "sn",
+                                      "idn0", "idn1", "udn0", "udn1",
+                                      "udn2", "udn3", "zero"};
+  if (N >= 53)
+    return Named[N - 53];
+  return "r" + std::to_string(N);
+}
+
+void TileInstPrinter::printTableInst(const MCInst *MI, raw_ostream &O) {
+  const TileISA::Opcode &Op = TileISA::opcode(MI->getOperand(0).getImm());
+  auto P = TileISA::Pipe(MI->getOperand(1).getImm());
+  O << Op.Name;
+  for (unsigned I = 0; I != Op.NumOperands; ++I) {
+    O << (I ? ", " : "\t");
+    const MCOperand &MO = MI->getOperand(I + 2);
+    if (TileISA::operand(Op, P, I).Kind == TileISA::OperandKind::Register)
+      O << tableRegisterName(MO.getImm());
+    else if (MO.isImm())
+      O << MO.getImm();
+    else
+      MAI.printExpr(O, *MO.getExpr());
+  }
+}
+
 void TileInstPrinter::printInst(const MCInst *MI, uint64_t Address,
                                 StringRef Annot, const MCSubtargetInfo &STI,
                                 raw_ostream &O) {
   // A packed VLIW bundle prints as a brace-delimited, semicolon-separated list
   // of its issue-slot instructions: { a ; b }. A single instruction prints bare
   // (its complementary FNOP slot is implicit), matching GNU tile-as.
+  if (MI->getOpcode() == Tile::BUNDLE && MI->getNumOperands() == 1 &&
+      MI->getOperand(0).getInst()->getOpcode() == Tile::TABLE_INST) {
+    O << '\t';
+    printTableInst(MI->getOperand(0).getInst(), O);
+    printAnnotation(O, Annot);
+    return;
+  }
+
   if (MI->getOpcode() == Tile::BUNDLE) {
     O << "\t{ ";
     bool First = true;
@@ -46,7 +80,10 @@ void TileInstPrinter::printInst(const MCInst *MI, uint64_t Address,
       First = false;
       std::string Buf;
       raw_string_ostream SubOS(Buf);
-      printInstruction(&Sub, Address, SubOS);
+      if (Sub.getOpcode() == Tile::TABLE_INST)
+        printTableInst(&Sub, SubOS);
+      else
+        printInstruction(&Sub, Address, SubOS);
       O << StringRef(Buf).trim();
     }
     O << " }";

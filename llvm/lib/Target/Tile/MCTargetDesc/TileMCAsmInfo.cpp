@@ -61,6 +61,28 @@ StringRef Tile::getSpecifierName(uint16_t Spec) {
     return "tls_gd_call";
   case TileII::MO_TLS_IE_LOAD:
     return "tls_ie_load";
+  case TileII::MO_HW0_LAST:
+    return "hw0_last";
+  case TileII::MO_HW2:
+    return "hw2";
+  case TileII::MO_HW3:
+    return "hw3";
+  case TileII::MO_HW0_LAST_GOT:
+    return "hw0_last_got";
+  case TileII::MO_HW0_LAST_TLS_GD:
+    return "hw0_last_tls_gd";
+  case TileII::MO_HW0_LAST_TLS_IE:
+    return "hw0_last_tls_ie";
+  case TileII::MO_HW0_LAST_TLS_LE:
+    return "hw0_last_tls_le";
+  case TileII::MO_HW0_PLT:
+    return "hw0_plt";
+  case TileII::MO_HW1_PLT:
+    return "hw1_plt";
+  case TileII::MO_HW1_LAST_PLT:
+    return "hw1_last_plt";
+  case TileII::MO_HW2_LAST_PLT:
+    return "hw2_last_plt";
   default:
     return StringRef();
   }

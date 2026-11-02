@@ -19,6 +19,7 @@
 #include "MCTargetDesc/TileBaseInfo.h"
 #include "MCTargetDesc/TileFixupKinds.h"
 #include "MCTargetDesc/TileMCTargetDesc.h"
+#include "MCTargetDesc/TileOpcodeTable.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
@@ -79,6 +80,9 @@ public:
   void encodeInstruction(const MCInst &MI, SmallVectorImpl<char> &CB,
                          SmallVectorImpl<MCFixup> &Fixups,
                          const MCSubtargetInfo &STI) const override;
+
+  uint64_t encodeTableBundle(const MCInst &MI,
+                             SmallVectorImpl<MCFixup> &Fixups) const;
 };
 } // namespace
 
@@ -96,6 +100,13 @@ void TileMCCodeEmitter::encodeInstruction(const MCInst &MI,
   // FNOP) and overwrite the slot it really occupies in the accumulated word.
   // Relocations come only from X1-pipe operands and ride at bundle offset 0, so
   // the recorded fixups stay correct for the merged word.
+  if (MI.getOpcode() == Tile::BUNDLE && MI.getNumOperands() &&
+      MI.getOperand(0).getInst()->getOpcode() == Tile::TABLE_INST) {
+    support::endian::write<uint64_t>(CB, encodeTableBundle(MI, Fixups),
+                                     llvm::endianness::little);
+    return;
+  }
+
   if (MI.getOpcode() == Tile::BUNDLE) {
     uint64_t Bundle = 0;
     bool First = true;
@@ -128,6 +139,65 @@ void TileMCCodeEmitter::encodeInstruction(const MCInst &MI,
 
   uint64_t Bundle = getBinaryCodeForInstr(MI, Fixups, STI);
   support::endian::write<uint64_t>(CB, Bundle, llvm::endianness::little);
+}
+
+// Bundles from the asm parser. The parser already chose a pipe per slot and
+// checked operand kinds and ranges against the table.
+uint64_t
+TileMCCodeEmitter::encodeTableBundle(const MCInst &MI,
+                                     SmallVectorImpl<MCFixup> &Fixups) const {
+  using namespace TileISA;
+  uint64_t Bundle = 0;
+  unsigned Used = 0;
+  for (const MCOperand &SubOp : MI) {
+    const MCInst &Sub = *SubOp.getInst();
+    const Opcode &Op = opcode(Sub.getOperand(0).getImm());
+    auto P = Pipe(Sub.getOperand(1).getImm());
+    Used |= 1u << P;
+    Bundle |= Op.FixedBits[P];
+    for (unsigned I = 0; I != Op.NumOperands; ++I) {
+      const Operand &Info = operand(Op, P, I);
+      const MCOperand &MO = Sub.getOperand(I + 2);
+      if (MO.isImm()) {
+        Bundle |= insertField(field(Info.FieldId), MO.getImm());
+        continue;
+      }
+
+      const MCExpr *Expr = MO.getExpr();
+      std::optional<unsigned> Reloc = Info.DefaultReloc;
+      if (const auto *SE = dyn_cast<MCSpecifierExpr>(Expr)) {
+        Reloc = applyOperator(SE->getSpecifier(), Info.DefaultReloc);
+        Expr = SE->getSubExpr();
+        if (operatorNeedsSymbol(SE->getSpecifier()) &&
+            !isa<MCSymbolRefExpr>(Expr))
+          Ctx.reportError(Sub.getLoc(),
+                          "operator may only be applied to a symbol");
+      }
+      if (!Reloc || *Reloc == ELF::R_TILEGX_NONE) {
+        Ctx.reportError(Sub.getLoc(), "invalid operator for operand");
+        continue;
+      }
+      Fixups.push_back(MCFixup::create(0, Expr, Tile::getFixupKind(*Reloc),
+                                       Info.PCRel));
+    }
+  }
+
+  // tile-as fills beside an instruction that may not bundle with a nop, which
+  // binary rewriters must keep, and elsewhere with an fnop.
+  bool Lone = MI.getNumOperands() == 1 &&
+              !opcode(MI.getOperand(0).getInst()->getOperand(0).getImm())
+                   .CanBundle;
+  bool YMode = Used & ~((1u << PipeX0) | (1u << PipeX1));
+  for (Pipe P : YMode ? std::initializer_list<Pipe>{PipeY0, PipeY1, PipeY2}
+                      : std::initializer_list<Pipe>{PipeX0, PipeX1}) {
+    if (Used & (1u << P))
+      continue;
+    if (std::optional<uint64_t> Fill = fillerBits(P, Lone))
+      Bundle |= *Fill;
+    else
+      Ctx.reportError(MI.getLoc(), "a Y-mode bundle needs a load or store");
+  }
+  return Bundle;
 }
 
 unsigned
