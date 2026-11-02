@@ -4159,7 +4159,9 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
     llvm::Type *ArgType = ArgValue->getType();
     unsigned BitWidth = ArgType->getIntegerBitWidth();
     Value *One = ConstantInt::get(ArgType, 1);
-    Value *Two = ConstantInt::get(ArgType, 2);
+    // A one-bit argument always takes the isleone path, so 2 may truncate.
+    Value *Two = ConstantInt::get(ArgType, 2, /*IsSigned=*/false,
+                                  /*ImplicitTrunc=*/true);
 
     Value *IsLEOne = Builder.CreateICmpULE(ArgValue, One, "isleone");
 
