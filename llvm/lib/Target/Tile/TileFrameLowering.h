@@ -32,6 +32,9 @@ public:
 
   bool hasReservedCallFrame(const MachineFunction &MF) const override;
 
+  // r48 keeps the realigned sp for locals once a dynamic alloca moves sp.
+  bool hasBP(const MachineFunction &MF) const;
+
   void determineCalleeSaves(MachineFunction &MF, BitVector &SavedRegs,
                             RegScavenger *RS) const override;
 

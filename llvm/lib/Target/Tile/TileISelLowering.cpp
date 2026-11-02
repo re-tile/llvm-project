@@ -914,6 +914,15 @@ SDValue TileTargetLowering::lowerDYNAMIC_STACKALLOC(SDValue Op,
   // pointer that clears the 16-byte reserve zone.
   SDValue SP = DAG.getCopyFromReg(Chain, dl, Tile::SP, PtrVT);
   SDValue NewSP = DAG.getNode(ISD::SUB, dl, PtrVT, SP, Size);
+  // Past 16 bytes the block is rounded down to its alignment and the reserve
+  // goes below it.
+  uint64_t Align = Op.getConstantOperandVal(2);
+  if (Align > 16) {
+    NewSP = DAG.getNode(ISD::AND, dl, PtrVT, NewSP,
+                        DAG.getSignedConstant(-(int64_t)Align, dl, PtrVT));
+    NewSP = DAG.getNode(ISD::SUB, dl, PtrVT, NewSP,
+                        DAG.getConstant(16, dl, PtrVT));
+  }
 
   SDValue Reserve0 =
       DAG.getLoad(PtrVT, dl, SP.getValue(1), SP, MachinePointerInfo());

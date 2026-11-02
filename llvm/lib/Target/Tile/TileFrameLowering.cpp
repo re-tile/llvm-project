@@ -39,7 +39,13 @@ static void emitCFI(MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
 bool TileFrameLowering::hasFPImpl(const MachineFunction &MF) const {
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   return MF.getTarget().Options.DisableFramePointerElim(MF) ||
-         MFI.hasVarSizedObjects() || MFI.isFrameAddressTaken();
+         MFI.hasVarSizedObjects() || MFI.isFrameAddressTaken() ||
+         MF.getSubtarget().getRegisterInfo()->hasStackRealignment(MF);
+}
+
+bool TileFrameLowering::hasBP(const MachineFunction &MF) const {
+  return MF.getFrameInfo().hasVarSizedObjects() &&
+         MF.getSubtarget().getRegisterInfo()->hasStackRealignment(MF);
 }
 
 bool TileFrameLowering::hasReservedCallFrame(const MachineFunction &MF) const {
@@ -88,8 +94,12 @@ void TileFrameLowering::emitPrologue(MachineFunction &MF,
   unsigned TempReg0 = Tile::R10;
   unsigned TempReg1 = Tile::R11;
 
-  unsigned RegSize = 8;
-  uint64_t StackSize = (MFI.hasCalls() ? 2 * RegSize : 0) +
+  // Locals sit at sp + StackSize + offset, so a realigned sp needs StackSize
+  // to keep their alignment, and the lr and back-chain reserve grows to match.
+  bool Realign = TRI.hasStackRealignment(MF);
+  uint64_t MaxAlign = MFI.getMaxAlign().value();
+  uint64_t Reserve = Realign ? std::max<uint64_t>(MaxAlign, 16) : 16;
+  uint64_t StackSize = (MFI.hasCalls() ? Reserve : 0) +
                        alignTo(MFI.getStackSize(), getStackAlign());
 
   MFI.setStackSize(StackSize);
@@ -142,6 +152,35 @@ void TileFrameLowering::emitPrologue(MachineFunction &MF,
                 nullptr, TRI.getDwarfRegNum(Tile::FP, true)));
   }
 
+  if (Realign) {
+    if (isInt<8>(-(int64_t)MaxAlign)) {
+      BuildMI(MBB, MBBI, dl, TII.get(Tile::ANDI), SP)
+          .addReg(SP)
+          .addImm(-(int64_t)MaxAlign);
+    } else {
+      assert(isInt<16>(-(int64_t)MaxAlign) && "stack alignment too large");
+      BuildMI(MBB, MBBI, dl, TII.get(Tile::MOVELI), TempReg0)
+          .addImm(-(int64_t)MaxAlign);
+      BuildMI(MBB, MBBI, dl, TII.get(Tile::AND), SP)
+          .addReg(SP)
+          .addReg(TempReg0);
+    }
+
+    if (MFI.hasCalls()) {
+      BuildMI(MBB, MBBI, dl, TII.get(Tile::ADDI), TempReg0)
+          .addReg(SP)
+          .addImm(8);
+      BuildMI(MBB, MBBI, dl, TII.get(Tile::ST))
+          .addReg(TempReg0)
+          .addReg(TempReg1);
+    }
+
+    if (hasBP(MF))
+      BuildMI(MBB, MBBI, dl, TII.get(Tile::ADD), Tile::R48)
+          .addReg(SP)
+          .addReg(ZERO);
+  }
+
   if (MF.getInfo<TileFunctionInfo>()->globalBaseRegSet())
     BuildMI(MBB, MBBI, dl, TII.get(Tile::GOT_SETUP));
 }
@@ -187,9 +226,12 @@ StackOffset
 TileFrameLowering::getFrameIndexReference(const MachineFunction &MF, int FI,
                                           Register &FrameReg) const {
   const MachineFrameInfo &MFI = MF.getFrameInfo();
-  FrameReg = hasFP(MF) ? Tile::FP : Tile::SP;
+  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
+  FrameReg = TRI->getFrameRegister(MF);
+  if (TRI->hasStackRealignment(MF) && !MFI.isFixedObjectIndex(FI))
+    FrameReg = hasBP(MF) ? Tile::R48 : Tile::SP;
   int64_t Offset = MFI.getObjectOffset(FI) + MFI.getOffsetAdjustment();
-  if (!hasFP(MF))
+  if (FrameReg != Tile::FP || TRI->hasStackRealignment(MF))
     Offset += MFI.getStackSize();
   return StackOffset::getFixed(Offset);
 }
@@ -201,6 +243,8 @@ void TileFrameLowering::determineCalleeSaves(MachineFunction &MF,
 
   if (hasFP(MF))
     SavedRegs.set(Tile::FP);
+  if (hasBP(MF))
+    SavedRegs.set(Tile::R48);
 
   // r49 is the frame-index scratch and r50/r51 the GOT base. Both are written
   // only after this runs, so the generic def scan cannot see them.

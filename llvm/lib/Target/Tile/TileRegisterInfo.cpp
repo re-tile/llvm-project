@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TileRegisterInfo.h"
+#include "TileFrameLowering.h"
 #include "TileInstrInfo.h"
 #include "TileMachineFunction.h"
 #include "TileSubtarget.h"
@@ -57,6 +58,13 @@ BitVector TileRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(R);
   for (MCPhysReg R : ReservedCPU32Regs)
     Reserved.set(R);
+
+  const auto *TFI = static_cast<const TileFrameLowering *>(
+      MF.getSubtarget().getFrameLowering());
+  if (TFI->hasBP(MF)) {
+    Reserved.set(Tile::R48);
+    Reserved.set(Tile::R48_32);
+  }
 
   // If a register is dedicated as the global base register, reserve it.
   if (MF.getInfo<TileFunctionInfo>()->globalBaseRegFixed()) {
@@ -119,8 +127,12 @@ bool TileRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   unsigned StackReg = 0;
   int64_t Offset = 0;
+  const auto *TFI = static_cast<const TileFrameLowering *>(
+      MF.getSubtarget().getFrameLowering());
   if (IsCSRSlot)
     StackReg = Tile::SP;
+  else if (hasStackRealignment(MF) && !MFI.isFixedObjectIndex(FrameIndex))
+    StackReg = TFI->hasBP(MF) ? Tile::R48 : Tile::SP;
   else
     StackReg = getFrameRegister(MF);
 
