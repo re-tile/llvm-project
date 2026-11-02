@@ -5023,3 +5023,4 @@ include "TileInstrFP.td"
 // SIMD Support
 //===----------------------------------------------------------------------===//
 include "TileInstrSIMD.td"
+include "TileInstrBuiltins.td"

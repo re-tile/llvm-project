@@ -415,4 +415,329 @@ def int_tilegx_#Name : ClangBuiltin<"__insn_"#Name>,
 foreach Name = ["drain", "flushwb", "mf", "nap"] in
 def int_tilegx_#Name : ClangBuiltin<"__insn_"#Name>,
   Intrinsic<[], [], [IntrHasSideEffects]>;
+
+def int_tilegx_add : ClangBuiltin<"__insn_add">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_addi : ClangBuiltin<"__insn_addi">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_addli : ClangBuiltin<"__insn_addli">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_addxi : ClangBuiltin<"__insn_addxi">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_addxli : ClangBuiltin<"__insn_addxli">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_addxsc : ClangBuiltin<"__insn_addxsc">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_and : ClangBuiltin<"__insn_and">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_andi : ClangBuiltin<"__insn_andi">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_bfexts : ClangBuiltin<"__insn_bfexts">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_bfextu : ClangBuiltin<"__insn_bfextu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_bfins : ClangBuiltin<"__insn_bfins">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmoveqz : ClangBuiltin<"__insn_cmoveqz">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmovnez : ClangBuiltin<"__insn_cmovnez">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmpeq : ClangBuiltin<"__insn_cmpeq">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmpeqi : ClangBuiltin<"__insn_cmpeqi">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmples : ClangBuiltin<"__insn_cmples">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmpleu : ClangBuiltin<"__insn_cmpleu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmplts : ClangBuiltin<"__insn_cmplts">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmpltsi : ClangBuiltin<"__insn_cmpltsi">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmpltu : ClangBuiltin<"__insn_cmpltu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmpltui : ClangBuiltin<"__insn_cmpltui">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmpne : ClangBuiltin<"__insn_cmpne">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmul : ClangBuiltin<"__insn_cmul">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmula : ClangBuiltin<"__insn_cmula">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmulaf : ClangBuiltin<"__insn_cmulaf">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmulf : ClangBuiltin<"__insn_cmulf">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmulfr : ClangBuiltin<"__insn_cmulfr">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmulh : ClangBuiltin<"__insn_cmulh">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_cmulhr : ClangBuiltin<"__insn_cmulhr">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_dtlbpr : ClangBuiltin<"__insn_dtlbpr">,
+  Intrinsic<[], [llvm_i64_ty], [IntrHasSideEffects]>;
+def int_tilegx_fdouble_add_flags : ClangBuiltin<"__insn_fdouble_add_flags">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fdouble_addsub : ClangBuiltin<"__insn_fdouble_addsub">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fdouble_mul_flags : ClangBuiltin<"__insn_fdouble_mul_flags">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fdouble_pack1 : ClangBuiltin<"__insn_fdouble_pack1">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fdouble_pack2 : ClangBuiltin<"__insn_fdouble_pack2">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fdouble_sub_flags : ClangBuiltin<"__insn_fdouble_sub_flags">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fdouble_unpack_max : ClangBuiltin<"__insn_fdouble_unpack_max">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fdouble_unpack_min : ClangBuiltin<"__insn_fdouble_unpack_min">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fnop : ClangBuiltin<"__insn_fnop">,
+  Intrinsic<[], [], [IntrHasSideEffects]>;
+def int_tilegx_fsingle_add1 : ClangBuiltin<"__insn_fsingle_add1">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fsingle_addsub2 : ClangBuiltin<"__insn_fsingle_addsub2">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fsingle_mul1 : ClangBuiltin<"__insn_fsingle_mul1">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fsingle_mul2 : ClangBuiltin<"__insn_fsingle_mul2">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fsingle_pack1 : ClangBuiltin<"__insn_fsingle_pack1">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fsingle_pack2 : ClangBuiltin<"__insn_fsingle_pack2">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_fsingle_sub1 : ClangBuiltin<"__insn_fsingle_sub1">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_ill : ClangBuiltin<"__insn_ill">,
+  Intrinsic<[], [], [IntrHasSideEffects]>;
+def int_tilegx_info : ClangBuiltin<"__insn_info">,
+  Intrinsic<[], [llvm_i64_ty], [IntrHasSideEffects]>;
+def int_tilegx_infol : ClangBuiltin<"__insn_infol">,
+  Intrinsic<[], [llvm_i64_ty], [IntrHasSideEffects]>;
+def int_tilegx_ld : ClangBuiltin<"__insn_ld">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld1s : ClangBuiltin<"__insn_ld1s">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld1u : ClangBuiltin<"__insn_ld1u">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld2s : ClangBuiltin<"__insn_ld2s">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld2u : ClangBuiltin<"__insn_ld2u">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld4s : ClangBuiltin<"__insn_ld4s">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld4u : ClangBuiltin<"__insn_ld4u">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldna : ClangBuiltin<"__insn_ldna">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt : ClangBuiltin<"__insn_ldnt">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt1s : ClangBuiltin<"__insn_ldnt1s">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt1u : ClangBuiltin<"__insn_ldnt1u">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt2s : ClangBuiltin<"__insn_ldnt2s">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt2u : ClangBuiltin<"__insn_ldnt2u">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt4s : ClangBuiltin<"__insn_ldnt4s">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt4u : ClangBuiltin<"__insn_ldnt4u">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld_l2 : ClangBuiltin<"__insn_ld_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld1s_l2 : ClangBuiltin<"__insn_ld1s_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld1u_l2 : ClangBuiltin<"__insn_ld1u_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld2s_l2 : ClangBuiltin<"__insn_ld2s_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld2u_l2 : ClangBuiltin<"__insn_ld2u_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld4s_l2 : ClangBuiltin<"__insn_ld4s_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld4u_l2 : ClangBuiltin<"__insn_ld4u_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldna_l2 : ClangBuiltin<"__insn_ldna_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt_l2 : ClangBuiltin<"__insn_ldnt_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt1s_l2 : ClangBuiltin<"__insn_ldnt1s_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt1u_l2 : ClangBuiltin<"__insn_ldnt1u_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt2s_l2 : ClangBuiltin<"__insn_ldnt2s_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt2u_l2 : ClangBuiltin<"__insn_ldnt2u_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt4s_l2 : ClangBuiltin<"__insn_ldnt4s_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt4u_l2 : ClangBuiltin<"__insn_ldnt4u_L2">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld_miss : ClangBuiltin<"__insn_ld_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld1s_miss : ClangBuiltin<"__insn_ld1s_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld1u_miss : ClangBuiltin<"__insn_ld1u_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld2s_miss : ClangBuiltin<"__insn_ld2s_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld2u_miss : ClangBuiltin<"__insn_ld2u_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld4s_miss : ClangBuiltin<"__insn_ld4s_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ld4u_miss : ClangBuiltin<"__insn_ld4u_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldna_miss : ClangBuiltin<"__insn_ldna_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt_miss : ClangBuiltin<"__insn_ldnt_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt1s_miss : ClangBuiltin<"__insn_ldnt1s_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt1u_miss : ClangBuiltin<"__insn_ldnt1u_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt2s_miss : ClangBuiltin<"__insn_ldnt2s_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt2u_miss : ClangBuiltin<"__insn_ldnt2u_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt4s_miss : ClangBuiltin<"__insn_ldnt4s_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_ldnt4u_miss : ClangBuiltin<"__insn_ldnt4u_miss">,
+  Intrinsic<[llvm_i64_ty], [llvm_ptr_ty], [IntrReadMem, IntrArgMemOnly]>;
+def int_tilegx_lnk : ClangBuiltin<"__insn_lnk">,
+  Intrinsic<[llvm_i64_ty], [], [IntrNoMem]>;
+def int_tilegx_mnz : ClangBuiltin<"__insn_mnz">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_move : ClangBuiltin<"__insn_move">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_movei : ClangBuiltin<"__insn_movei">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_moveli : ClangBuiltin<"__insn_moveli">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_hs_hs : ClangBuiltin<"__insn_mul_hs_hs">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_hs_hu : ClangBuiltin<"__insn_mul_hs_hu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_hs_ls : ClangBuiltin<"__insn_mul_hs_ls">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_hs_lu : ClangBuiltin<"__insn_mul_hs_lu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_hu_hu : ClangBuiltin<"__insn_mul_hu_hu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_hu_ls : ClangBuiltin<"__insn_mul_hu_ls">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_hu_lu : ClangBuiltin<"__insn_mul_hu_lu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_ls_ls : ClangBuiltin<"__insn_mul_ls_ls">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_ls_lu : ClangBuiltin<"__insn_mul_ls_lu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mul_lu_lu : ClangBuiltin<"__insn_mul_lu_lu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_hs_hs : ClangBuiltin<"__insn_mula_hs_hs">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_hs_hu : ClangBuiltin<"__insn_mula_hs_hu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_hs_ls : ClangBuiltin<"__insn_mula_hs_ls">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_hs_lu : ClangBuiltin<"__insn_mula_hs_lu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_hu_hu : ClangBuiltin<"__insn_mula_hu_hu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_hu_ls : ClangBuiltin<"__insn_mula_hu_ls">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_hu_lu : ClangBuiltin<"__insn_mula_hu_lu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_ls_ls : ClangBuiltin<"__insn_mula_ls_ls">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_ls_lu : ClangBuiltin<"__insn_mula_ls_lu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mula_lu_lu : ClangBuiltin<"__insn_mula_lu_lu">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_mulax : ClangBuiltin<"__insn_mulax">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_mulx : ClangBuiltin<"__insn_mulx">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_mz : ClangBuiltin<"__insn_mz">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_nop : ClangBuiltin<"__insn_nop">,
+  Intrinsic<[], [], [IntrHasSideEffects]>;
+def int_tilegx_nor : ClangBuiltin<"__insn_nor">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_or : ClangBuiltin<"__insn_or">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_ori : ClangBuiltin<"__insn_ori">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_rotl : ClangBuiltin<"__insn_rotl">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_rotli : ClangBuiltin<"__insn_rotli">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shl16insli : ClangBuiltin<"__insn_shl16insli">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_shl1add : ClangBuiltin<"__insn_shl1add">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_shl1addx : ClangBuiltin<"__insn_shl1addx">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shl2add : ClangBuiltin<"__insn_shl2add">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_shl2addx : ClangBuiltin<"__insn_shl2addx">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shl3add : ClangBuiltin<"__insn_shl3add">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_shl3addx : ClangBuiltin<"__insn_shl3addx">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shli : ClangBuiltin<"__insn_shli">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shlx : ClangBuiltin<"__insn_shlx">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shlxi : ClangBuiltin<"__insn_shlxi">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shrs : ClangBuiltin<"__insn_shrs">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shrsi : ClangBuiltin<"__insn_shrsi">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shru : ClangBuiltin<"__insn_shru">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shrui : ClangBuiltin<"__insn_shrui">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shrux : ClangBuiltin<"__insn_shrux">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shruxi : ClangBuiltin<"__insn_shruxi">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_shufflebytes1 : ClangBuiltin<"__insn_shufflebytes1">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_st : ClangBuiltin<"__insn_st">,
+  Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty], [IntrWriteMem, IntrArgMemOnly]>;
+def int_tilegx_st1 : ClangBuiltin<"__insn_st1">,
+  Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty], [IntrWriteMem, IntrArgMemOnly]>;
+def int_tilegx_st2 : ClangBuiltin<"__insn_st2">,
+  Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty], [IntrWriteMem, IntrArgMemOnly]>;
+def int_tilegx_st4 : ClangBuiltin<"__insn_st4">,
+  Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty], [IntrWriteMem, IntrArgMemOnly]>;
+def int_tilegx_stnt : ClangBuiltin<"__insn_stnt">,
+  Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty], [IntrWriteMem, IntrArgMemOnly]>;
+def int_tilegx_stnt1 : ClangBuiltin<"__insn_stnt1">,
+  Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty], [IntrWriteMem, IntrArgMemOnly]>;
+def int_tilegx_stnt2 : ClangBuiltin<"__insn_stnt2">,
+  Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty], [IntrWriteMem, IntrArgMemOnly]>;
+def int_tilegx_stnt4 : ClangBuiltin<"__insn_stnt4">,
+  Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty], [IntrWriteMem, IntrArgMemOnly]>;
+def int_tilegx_sub : ClangBuiltin<"__insn_sub">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_subx : ClangBuiltin<"__insn_subx">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_subxsc : ClangBuiltin<"__insn_subxsc">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+def int_tilegx_tblidxb0 : ClangBuiltin<"__insn_tblidxb0">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_tblidxb1 : ClangBuiltin<"__insn_tblidxb1">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_tblidxb2 : ClangBuiltin<"__insn_tblidxb2">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_tblidxb3 : ClangBuiltin<"__insn_tblidxb3">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_xor : ClangBuiltin<"__insn_xor">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+def int_tilegx_xori : ClangBuiltin<"__insn_xori">,
+  Intrinsic<[llvm_i64_ty], [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
 } // end TargetPrefix

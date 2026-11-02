@@ -84,6 +84,8 @@ static void lowerTableOp(const MachineInstr *MI, StringRef Mnemonic,
   for (const MachineOperand &MO : MI->operands())
     if (MO.isReg() && !(MO.isUse() && MO.isTied()))
       Values.push_back(TRI->getEncodingValue(MO.getReg()));
+    else if (MO.isImm())
+      Values.push_back(MO.getImm());
   lowerTileTableBundle(Mnemonic, Values, OutMI, AP.OutContext);
 }
 

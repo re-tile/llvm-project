@@ -125,6 +125,9 @@ bool TileAsmPrinter::emitSequence(const MachineInstr *MI) {
     return true;
   case Tile::NET_BARRIER:
     return true;
+  case Tile::SHUFFLEBYTES1:
+    Emit("shufflebytes", {Reg(0), Reg(1), Reg(2)});
+    return true;
   case Tile::CLZ32:
     Emit("shli", {Reg(0), Reg(1), 32});
     Emit("clz", {Reg(0), Reg(0)});
