@@ -70,6 +70,8 @@ static __inline dst_t __extendXfYf2__(src_t a) {
     // a is NaN or infinity.
     dstExp = dstInfExp;
     dstSigFrac = (dst_rep_t)srcSigFrac << (dstSigFracBits - srcSigFracBits);
+    if (srcSigFrac)
+      dstSigFrac |= DST_REP_C(1) << (dstSigFracBits - 1);
   }
 
   else if (srcSigFrac) {
